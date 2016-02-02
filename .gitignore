@@ -1,0 +1,7 @@
+.idea
+*.pyc
+*.so
+python-package/dist
+python-package/arboretum.egg-info
+*.o
+python-package/build/lib
