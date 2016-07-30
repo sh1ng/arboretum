@@ -45,7 +45,6 @@ namespace arboretum {
     void DataMatrix::UpdateGrad(){
       for(int i = 0; i < rows; ++i){
           grad[i] = _gradFunc(y[i], y_hat[i]);
-          printf("grad %d %f \n", i, grad[i]);
         }
 
     }
