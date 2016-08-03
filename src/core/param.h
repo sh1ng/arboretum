@@ -8,6 +8,12 @@ namespace arboretum {
       LogisticRegression
     };
 
+    template<typename T>
+    struct ThreadSpecific{
+      T data;
+      int thread;
+    };
+
     struct TreeParam{
     public:
       TreeParam(Objective objective, int depth, int min_child_weight, float colsample_bytre, float eta) : objective(objective),

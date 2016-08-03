@@ -87,33 +87,60 @@ namespace arboretum {
     };
 
     struct RegTree{
-      std::vector<Node> nodes;
-      unsigned int depth;
-      unsigned int offset;
-      std::vector<float> leaf_level;
+      static std::vector<int> InitLeft(unsigned int depth){
+        std::vector<int> tmp(1 << depth);
+        for(int i = 0; i < (1 << depth); ++i){
+            tmp[i] = Node::Left(i);
+          }
+       return tmp;
+      }
 
-      RegTree(unsigned int depth) : depth(depth){
+      static std::vector<int> InitRight(unsigned int depth){
+        std::vector<int> tmp(1 << depth);
+        for(int i = 0; i < (1 << depth); ++i){
+            tmp[i] = Node::Right(i);
+          }
+        return tmp;
+      }
+
+      std::vector<Node> nodes;
+      const unsigned int depth;
+      const unsigned int offset;
+      std::vector<float> leaf_level;
+      const std::vector<int> _node_lookup [2];
+
+      RegTree(unsigned int depth) : depth(depth), offset((1 << (depth - 1)) - 1),
+        _node_lookup({ RegTree::InitRight(depth), RegTree::InitLeft(depth) }){
         unsigned int nodes_num = (1 << depth) - 1;
-        offset = (1 << (depth - 1)) - 1;
         nodes.reserve(nodes_num);
+
         for(size_t i = 0; i < nodes_num; ++i){
             nodes.push_back(Node(i));
           }
         leaf_level.resize(1 << (depth-1));
       }
 
-      void Predict(arboretum::io::DataMatrix *data, std::vector<float> &out){
-        for(int i = 0; i < data->rows; ++i){
+      inline int ChildNode(const unsigned int parent, const bool isLeft) const {
+        return _node_lookup[isLeft][parent];
+      }
+
+      void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out) const {
+        for(size_t i = 0; i < data->rows; ++i){
             unsigned int node_id = 0;
             Node current_node = nodes[node_id];
-            while(node_id < offset){
+            for(size_t j = 1, len = depth; j < len; ++j){
                 current_node = nodes[node_id];
-                if(data->data[current_node.fid][i] <= current_node.threshold)
-                  node_id = Node::Left(node_id);
-                else
-                  node_id = Node::Right(node_id);
+                node_id = ChildNode(node_id, data->data[current_node.fid][i] <= current_node.threshold);
               }
             out[i] += leaf_level[node_id - offset];
+          }
+      }
+
+      void Predict(const arboretum::io::DataMatrix *data, const std::vector<unsigned int> &row2Node, std::vector<float> &out) const {
+        unsigned int node_id;
+        for(size_t i = 0; i < data->rows; ++i){
+            node_id = row2Node[i];
+            out[i] += leaf_level[node_id];
           }
       }
     };
@@ -123,7 +150,8 @@ namespace arboretum {
     public:
       virtual void InitGrowingTree() = 0;
       virtual void InitTreeLevel(const int level) = 0;
-      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, std::vector<float> &grad) = 0;
+      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const std::vector<float> &grad) = 0;
+      virtual void PredictByGrownTree(RegTree *tree, const io::DataMatrix *data, std::vector<float> &out) = 0;
     };
 
     class Garden {
@@ -131,11 +159,12 @@ namespace arboretum {
       Garden(const TreeParam& param);
       const TreeParam param;
       void GrowTree(io::DataMatrix* data, float* grad);
-      void Predict(arboretum::io::DataMatrix *data, std::vector<float> &out);
+      void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out);
     private:
       bool _init;
       GardenBuilderBase* _builder;
       std::vector<RegTree*> _trees;
+      void SetInitial(const arboretum::io::DataMatrix *data, std::vector<float> &out);
     };
 
   }

@@ -29,10 +29,9 @@ namespace arboretum {
                                  const float *y){
       DataMatrix *data_ptr = static_cast<DataMatrix*>(data);
       data_ptr->y_hat.reserve(data_ptr->rows);
-      for(int i = 0; i < data_ptr->rows; ++i){
+      for(size_t i = 0; i < data_ptr->rows; ++i){
         data_ptr->y_hat.push_back(y[i]);
-
-        }
+      }
 
 
       return NULL;

@@ -1,6 +1,6 @@
 export CXX  = g++-5
 export LDFLAGS= -pthread -lm
-export CFLAGS = -Wall -O1 -g -mtune=native -march=native  -Wno-unknown-pragmas -ftree-vectorize -std=c++11 -fPIC
+export CFLAGS = -Wall -O3 -mtune=native -march=native  -Wno-unknown-pragmas -ftree-vectorize -funroll-loops -std=c++11 -fPIC
 SLIB = python-wrapper/arboretum_wrapper.so
 OBJ = io.o param.o garden.o
 
