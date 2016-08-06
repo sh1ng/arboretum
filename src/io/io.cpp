@@ -13,8 +13,8 @@ namespace arboretum {
       data.resize(columns);
       sorted_data.resize(columns);
       index.resize(columns);
+      sorted_grad.resize(columns);
       grad.resize(rows);
-      sorted_grad.resize(rows);
       for(int i = 0; i < columns; ++i){
             data[i].resize(rows);
       }
