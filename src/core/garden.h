@@ -3,6 +3,8 @@
 
 #include <cmath>
 #include <limits>
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
 #include "param.h"
 #include "../io/io.h"
 
@@ -110,7 +112,7 @@ namespace arboretum {
       const std::vector<int> _node_lookup [2];
 
       RegTree(unsigned int depth) : depth(depth), offset((1 << (depth - 1)) - 1),
-        _node_lookup({ RegTree::InitRight(depth), RegTree::InitLeft(depth) }){
+        _node_lookup{ RegTree::InitRight(depth), RegTree::InitLeft(depth) }{
         unsigned int nodes_num = (1 << depth) - 1;
         nodes.reserve(nodes_num);
 
@@ -136,7 +138,7 @@ namespace arboretum {
           }
       }
 
-      void Predict(const arboretum::io::DataMatrix *data, const std::vector<unsigned int> &row2Node, std::vector<float> &out) const {
+      void Predict(const arboretum::io::DataMatrix *data, const thrust::host_vector<size_t> &row2Node, std::vector<float> &out) const {
         unsigned int node_id;
         for(size_t i = 0; i < data->rows; ++i){
             node_id = row2Node[i];
@@ -150,7 +152,7 @@ namespace arboretum {
     public:
       virtual void InitGrowingTree() = 0;
       virtual void InitTreeLevel(const int level) = 0;
-      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const std::vector<float> &grad) = 0;
+      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float> &grad) = 0;
       virtual void PredictByGrownTree(RegTree *tree, const io::DataMatrix *data, std::vector<float> &out) = 0;
     };
 

@@ -1,6 +1,6 @@
-export CXX  = g++-5
-export LDFLAGS= -pthread -lm
-export CFLAGS = -Wall -O3 -mtune=native -march=native  -Wno-unknown-pragmas -ftree-vectorize -funroll-loops -std=c++11 -fPIC
+export CXX  = nvcc
+export LDFLAGS= -lm -gencode arch=compute_60,code=compute_60 -use_fast_math
+export CFLAGS = -O3 -gencode arch=compute_60,code=compute_60 -use_fast_math -std=c++11 -ccbin=g++ -Xcompiler -fPIC -Xcompiler -O3
 SLIB = python-wrapper/arboretum_wrapper.so
 OBJ = io.o param.o garden.o
 
@@ -8,17 +8,17 @@ all: $(OBJ) $(SLIB)
 
 param.o: src/core/param.cpp src/core/param.h
 
-garden.o: src/core/garden.cpp src/core/garden.h param.o io.o
+garden.o: src/core/garden.cu src/core/garden.h param.o io.o
 
 io.o: src/io/io.cpp src/io/io.h src/core/objective.h
 
 python-wrapper/arboretum_wrapper.so: python-wrapper/arboretum_wrapper.cpp python-wrapper/arboretum_wrapper.h io.o garden.o param.o
 
 $(OBJ) :
-	$(CXX) -c $(CFLAGS) -o $@ $(firstword $(filter %.cpp %.c %.cc, $^) )
+	$(CXX) -c $(CFLAGS) -o $@ $(firstword $(filter %.cpp %.c %.cc %.cu, $^) )
 
 $(SLIB) :
-	$(CXX) $(CFLAGS) -fPIC -shared -o $@ $(filter %.cpp %.o %.c %.a %.cc, $^) $(LDFLAGS)
+	$(CXX) $(CFLAGS) -shared -o $@ $(filter %.cpp %.o %.c %.a %.cc %.cu, $^) $(LDFLAGS)
 
 
 clean:

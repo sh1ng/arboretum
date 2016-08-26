@@ -37,7 +37,7 @@ namespace arboretum {
     }
 
     std::vector<int> DataMatrix::SortedIndex(int column){
-        std::vector<float>& v = data[column];
+        thrust::host_vector<float>& v = data[column];
         size_t size = v.size();
         std::vector<int> idx(size);
         for(size_t i = 0; i < size; i ++)
