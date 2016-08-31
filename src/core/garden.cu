@@ -20,6 +20,25 @@ namespace arboretum {
     using thrust::host_vector;
     using thrust::device_vector;
 
+    template<typename InputIterator1, typename InputIterator2, typename OutputIterator1, typename OutputIterator2,
+             typename BinaryPredicate, typename BinaryFunction>
+    __global__ void reduce_by_key(InputIterator1 keys_first, InputIterator1 keys_last,
+                                  InputIterator2 values_first, OutputIterator1 keys_output,
+                                  OutputIterator2 values_output, BinaryPredicate binary_pred,
+                                  BinaryFunction binary_op)
+    {
+      thrust::reduce_by_key(
+                      thrust::cuda::par,
+                      keys_first,
+                      keys_last,
+                      values_first,
+                      keys_output,
+                      values_output,
+                      binary_pred,
+                      binary_op
+              );
+    }
+
 
     template <typename T>
     struct max_gain_functor{
@@ -288,7 +307,7 @@ namespace arboretum {
                                     thrust::make_tuple(gain[circular_fid].begin(),
                                                        iter));
 
-                              thrust::reduce_by_key(thrust::cuda::par.on(s),
+                              reduce_by_key<<<1,1,0,s>>>(
                                                     segments[circular_fid].begin(),
                                                     segments[circular_fid].end(),
                                                     tuple_iterator,
