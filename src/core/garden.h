@@ -5,6 +5,7 @@
 #include <limits>
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include <thrust/system/cuda/experimental/pinned_allocator.h>
 #include "param.h"
 #include "../io/io.h"
 
@@ -152,7 +153,7 @@ namespace arboretum {
     public:
       virtual void InitGrowingTree() = 0;
       virtual void InitTreeLevel(const int level) = 0;
-      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float> &grad) = 0;
+      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad) = 0;
       virtual void PredictByGrownTree(RegTree *tree, const io::DataMatrix *data, std::vector<float> &out) = 0;
     };
 

@@ -1,6 +1,7 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <thrust/system/cuda/experimental/pinned_allocator.h>
 #include "io.h"
 
 namespace arboretum {
@@ -13,7 +14,6 @@ namespace arboretum {
       data.resize(columns);
       sorted_data.resize(columns);
       index.resize(columns);
-      sorted_grad.resize(columns);
       grad.resize(rows);
       for(int i = 0; i < columns; ++i){
             data[i].resize(rows);
@@ -37,7 +37,7 @@ namespace arboretum {
     }
 
     std::vector<int> DataMatrix::SortedIndex(int column){
-        thrust::host_vector<float>& v = data[column];
+        auto &v = data[column];
         size_t size = v.size();
         std::vector<int> idx(size);
         for(size_t i = 0; i < size; i ++)
@@ -53,14 +53,6 @@ namespace arboretum {
       for(size_t i = 0; i < rows; ++i){
           grad[i] = _gradFunc(y[i], y_hat[i]);
         }
-      for(size_t i = 0; i < columns; ++i){
-          std::vector<float> tmp(data[i].size());
-          for(size_t j = 0; j < data[i].size(); ++j){
-              tmp[j] = grad[index[i][j]];
-            }
-          sorted_grad[i] = tmp;
-        }
-
     }
   }
 }

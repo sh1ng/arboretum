@@ -1,3 +1,5 @@
+#define CUB_STDERR
+
 #include <stdio.h>
 #include <limits>
 #include <thrust/device_vector.h>
@@ -7,6 +9,10 @@
 #include <thrust/execution_policy.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/system/cuda/execution_policy.h>
+#include <thrust/system/cuda/experimental/pinned_allocator.h>
+#include <cub/cub.cuh>
+#include <cub/device/device_radix_sort.cuh>
+#include <cub/util_allocator.cuh>
 #include "garden.h"
 #include "param.h"
 #include "objective.h"
@@ -19,75 +25,46 @@ namespace arboretum {
     using namespace thrust::cuda;
     using thrust::host_vector;
     using thrust::device_vector;
+    
+    struct GainFunctionParameters{
+    const unsigned int min_wieght;
+    GainFunctionParameters(const unsigned int min_wieght) : min_wieght(min_wieght) {}
+   };
 
-    template<typename InputIterator1, typename InputIterator2, typename OutputIterator1, typename OutputIterator2,
-             typename BinaryPredicate, typename BinaryFunction>
-    __global__ void reduce_by_key(InputIterator1 keys_first, InputIterator1 keys_last,
-                                  InputIterator2 values_first, OutputIterator1 keys_output,
-                                  OutputIterator2 values_output, BinaryPredicate binary_pred,
-                                  BinaryFunction binary_op)
-    {
-      thrust::reduce_by_key(
-                      thrust::cuda::par,
-                      keys_first,
-                      keys_last,
-                      values_first,
-                      keys_output,
-                      values_output,
-                      binary_pred,
-                      binary_op
-              );
-    }
+    __global__ void gain_kernel(const float *left_sum, const size_t *left_count, float *fvalues, float *fvalue_prevs,
+                                unsigned int *segments, cub::TexObjInputIterator<double> parent_sum_iter,
+                                cub::TexObjInputIterator<size_t> parent_count_iter, size_t n, const GainFunctionParameters parameters,
+                                double *gain){
+      for (int i = blockDim.x * blockIdx.x + threadIdx.x;
+               i < n;
+               i += gridDim.x * blockDim.x){
+          const unsigned int segment = segments[i];
+          const double left_sum_value = left_sum[i];
+          const size_t left_count_value = left_count[i];
+          const double total_sum = parent_sum_iter[segment];
+          const size_t total_count = parent_count_iter[segment];
+          const float fvalue = fvalues[i];
+          const float fvalue_prev = fvalue_prevs[i];
+          const size_t right_count = total_count - left_count_value;
 
-
-    template <typename T>
-    struct max_gain_functor{
-      typedef T first_argument_type;
-      typedef T second_argument_type;
-      typedef T result_type;
-
-      __host__ __device__
-      max_gain_functor(){}
-
-      __host__ __device__
-      T inline operator()(const T &l, const T &r) const {
-        const T _lookup [2] { r, l };
-        return _lookup[thrust::get<0>(l) > thrust::get<0>(r)];
-      }
-    };
-
-    struct gain_functor{
-      const int min_wieght;
-
-      __host__ __device__
-      gain_functor(const int min_wieght) : min_wieght(min_wieght) {}
-
-      template <typename Tuple>
-      __host__ __device__
-      void inline operator()(Tuple t)
-      {
-        const double left_sum = thrust::get<0>(t);
-        const size_t left_count = thrust::get<1>(t);
-        const double total_sum = thrust::get<2>(t);
-        const size_t total_count = thrust::get<3>(t);
-        const float fvalue = thrust::get<5>(t);
-        const float fvalue_prev = thrust::get<6>(t);
-        const size_t right_count = total_count - left_count;
-
-        if(left_count >= min_wieght && right_count >= min_wieght && fvalue != fvalue_prev){
-            const size_t d = left_count * total_count * (total_count - left_count);
-
-            const double top = total_count * left_sum - left_count * total_sum;
-            thrust::get<4>(t) = top*top/d;
-          } else {
-            thrust::get<4>(t) = 0.0;
+          if(left_count_value >= parameters.min_wieght && right_count >= parameters.min_wieght && fvalue != fvalue_prev){
+              const size_t d = left_count_value * total_count * (total_count - left_count_value);
+              const double top = total_count * left_sum_value - left_count_value * total_sum;
+              gain[i] = top*top/d;
+            } else {
+              gain[i] = 0.0;
+            }
           }
-      }
-    };
+    }
 
     class GardenBuilder : public GardenBuilderBase {
     public:
-      GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(2), param(param){
+      GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(2),
+        g_allocator(cub::CachingDeviceAllocator(32, 1, 5)), param(param), gain_param(param.min_child_weight){
+        int minGridSize; 
+        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, gain_kernel, 0, 0);
+        gridSize = (data->rows + blockSize - 1) / blockSize;
+        
         _rowIndex2Node.resize(data->rows, 0);
         _featureNodeSplitStat.resize(data->columns);
         _bestSplit.resize(1 << (param.depth - 2));
@@ -96,25 +73,30 @@ namespace arboretum {
             _featureNodeSplitStat[fid].resize(1 << param.depth);
           }
         gain = new device_vector<double>[overlap_depth];
-        sum = new device_vector<double>[overlap_depth];
+        sum = new device_vector<float>[overlap_depth];
         count = new device_vector<size_t>[overlap_depth];
         segments = new device_vector<unsigned int>[overlap_depth];
+        segments_sorted = new device_vector<unsigned int>[overlap_depth];
         fvalue = new device_vector<float>[overlap_depth];
         position = new device_vector<int>[overlap_depth];
         grad_sorted = new device_vector<float>[overlap_depth];
 
         for(size_t i = 0; i < overlap_depth; ++i){
             cudaStream_t s;
-            cudaStreamCreate(&s);
+            cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
             streams[i] = s;
             gain[i]  = device_vector<double>(data->rows);
-            sum[i]   = device_vector<double>(data->rows);
+            sum[i]   = device_vector<float>(data->rows);
             count[i] = device_vector<size_t>(data->rows);
             segments[i] = device_vector<unsigned int>(data->rows);
+            segments_sorted[i] = device_vector<unsigned int>(data->rows);
             fvalue[i] = device_vector<float>(data->rows + 1);
             fvalue[i][0] = -std::numeric_limits<float>::infinity();
+            fvalue_sorted[i] = device_vector<float>(data->rows + 1);
+            fvalue_sorted[i][0] = -std::numeric_limits<float>::infinity();
             position[i] = device_vector<int>(data->rows);
             grad_sorted[i] = device_vector<float>(data->rows);
+            grad_sorted_sorted[i] = device_vector<float>(data->rows);
           }
 
     }
@@ -141,7 +123,7 @@ namespace arboretum {
           }
       }
 
-      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float> &grad) override{
+      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad) override{
         InitGrowingTree();
 
         for(int i = 0; i < param.depth - 1; ++i){
@@ -161,26 +143,31 @@ namespace arboretum {
 
     private:
       const unsigned short overlap_depth;
+      cub::CachingDeviceAllocator g_allocator;
       const TreeParam param;
-      host_vector<unsigned int> _rowIndex2Node;
+      const GainFunctionParameters gain_param;
+      host_vector<unsigned int, thrust::cuda::experimental::pinned_allocator< unsigned int > > _rowIndex2Node;
       std::vector<std::vector<SplitStat> > _featureNodeSplitStat;
       std::vector<NodeStat> _nodeStat;
       std::vector<Split> _bestSplit;
 
+
       device_vector<double> *gain = new device_vector<double>[overlap_depth];
-      device_vector<double> *sum = new device_vector<double>[overlap_depth];
+      device_vector<float> *sum = new device_vector<float>[overlap_depth];
       device_vector<size_t> *count = new device_vector<size_t>[overlap_depth];
       device_vector<unsigned int> *segments = new device_vector<unsigned int>[overlap_depth];
+      device_vector<unsigned int> *segments_sorted = new device_vector<unsigned int>[overlap_depth];
       device_vector<float> *fvalue = new device_vector<float>[overlap_depth];
+      device_vector<float> *fvalue_sorted = new device_vector<float>[overlap_depth];
       device_vector<int> *position = new device_vector<int>[overlap_depth];
       device_vector<float> *grad_sorted = new device_vector<float>[overlap_depth];
+      device_vector<float> *grad_sorted_sorted = new device_vector<float>[overlap_depth];
       cudaStream_t *streams = new cudaStream_t[overlap_depth];
+      int blockSize;
+      int gridSize;
 
-      void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float> &grad){
-        typedef thrust::device_vector<double>::iterator ElementDoubleIterator;
-        typedef thrust::device_vector<size_t>::iterator ElementIntIterator;
-        typedef thrust::device_vector<unsigned int>::iterator IndexIterator;
-       size_t lenght = 1 << level;
+      void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad){
+        size_t lenght = 1 << level;
 
         device_vector<double> parent_node_sum(lenght);
         device_vector<size_t> parent_node_count(lenght);
@@ -196,23 +183,33 @@ namespace arboretum {
           parent_node_count = parent_node_count_h;
         }
 
+        cub::TexObjInputIterator<double> parent_sum_iter;
+        parent_sum_iter.BindTexture(thrust::raw_pointer_cast(parent_node_sum.data()), sizeof(double) * lenght);
+
+        cub::TexObjInputIterator<size_t> parent_count_iter;
+        parent_count_iter.BindTexture(thrust::raw_pointer_cast(parent_node_count.data()), sizeof(size_t) * lenght);
 
 
         device_vector<int> *max_key_d = new device_vector<int>[overlap_depth];
         device_vector<thrust::tuple<double, size_t>> *max_value_d = new device_vector<thrust::tuple<double, size_t>>[overlap_depth];
         host_vector<int> *max_key = new host_vector<int>[overlap_depth];
         host_vector<thrust::tuple<double, size_t>> *max_value = new host_vector<thrust::tuple<double, size_t>>[overlap_depth];
-
+        size_t n = 1 << level;
+        device_vector<unsigned int> *result = new device_vector<unsigned int>[overlap_depth];
+        thrust::device_vector<unsigned int> *data_ = new thrust::device_vector<unsigned int>[overlap_depth];
         for(size_t i = 0; i < overlap_depth; ++i){
+            result[i] = device_vector<unsigned int>(1, 0);
+            data_[i] = thrust::device_vector<unsigned int>(n, 1);
+
             max_key_d[i] = device_vector<int>(1 << level, -1);
             max_value_d[i] = device_vector<thrust::tuple<double, size_t>>(1 << level);
             max_key[i] = host_vector<int>(1 << level, -1);
             max_value[i] = host_vector<thrust::tuple<double, size_t>>(1 << level);
           }
 
-        thrust::equal_to<unsigned int> binary_pred;
-        max_gain_functor< thrust::tuple<double, size_t> > binary_op;
         device_vector<unsigned int> row2Node = _rowIndex2Node;
+        device_vector<float> grad_d = data->grad;
+
 
                       for(size_t fid = 0; fid < data->columns; ++fid){
                           for(size_t i = 0; i < overlap_depth && (fid + i) < data->columns; ++i){
@@ -220,30 +217,32 @@ namespace arboretum {
                               if(fid != 0 && i < overlap_depth - 1){
                                   continue;
                                 }
+
                               size_t active_fid = fid + i;
                               size_t circular_fid = active_fid % overlap_depth;
 
                               cudaStream_t s = streams[circular_fid];
+
+                              cudaMemcpyAsync(thrust::raw_pointer_cast((&fvalue[circular_fid].data()[1])),
+                                              thrust::raw_pointer_cast(data->sorted_data[active_fid].data()),
+                                              data->rows * sizeof(float),
+                                              cudaMemcpyHostToDevice, s);
+
+                              cudaMemcpyAsync(thrust::raw_pointer_cast(position[circular_fid].data()),
+                                              thrust::raw_pointer_cast(data->index[active_fid].data()),
+                                              data->rows * sizeof(int),
+                                              cudaMemcpyHostToDevice, s);
 
                               thrust::fill(thrust::cuda::par.on(s),
                                     max_key_d[circular_fid].begin(),
                                     max_key_d[circular_fid].end(),
                                            -1);
 
-                              thrust::copy(thrust::cuda::par.on(s),
-                                           data->sorted_grad[active_fid].begin(),
-                                           data->sorted_grad[active_fid].end(),
-                                           grad_sorted[circular_fid].begin());
-
-                              thrust::copy(thrust::cuda::par.on(s),
-                                           data->sorted_data[active_fid].begin(),
-                                           data->sorted_data[active_fid].end(),
-                                           fvalue[circular_fid].begin() + 1);
-
-                              thrust::copy(thrust::cuda::par.on(s),
-                                           data->index[active_fid].begin(),
-                                           data->index[active_fid].end(),
-                                           position[circular_fid].begin());
+                              thrust::gather(thrust::cuda::par.on(s),
+                                             position[circular_fid].begin(),
+                                             position[circular_fid].end(),
+                                             grad_d.begin(),
+                                             grad_sorted[circular_fid].begin());
 
                               thrust::gather(thrust::cuda::par.on(s),
                                              position[circular_fid].begin(),
@@ -251,106 +250,161 @@ namespace arboretum {
                                              row2Node.begin(),
                                              segments[circular_fid].begin());
 
-                              thrust::stable_sort_by_key(thrust::cuda::par.on(s),
-                                                         segments[circular_fid].begin(),
-                                                         segments[circular_fid].end(),
-                                                         thrust::make_zip_iterator(
-                                                           thrust::make_tuple(grad_sorted[circular_fid].begin(),
-                                                           fvalue[circular_fid].begin() + 1)
-                                                           ));
+                              size_t  temp_storage_bytes  = 0;
+                              void *d_temp_storage = NULL;
 
 
-                              thrust::exclusive_scan_by_key(thrust::cuda::par.on(s),
-                                                            segments[circular_fid].begin(),
-                                                            segments[circular_fid].end(),
-                                                            grad_sorted[circular_fid].begin(),
-                                                            sum[circular_fid].begin());
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
+                                                                      temp_storage_bytes,
+                                                                      thrust::raw_pointer_cast(segments[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
+                                                                      data->rows,
+                                                                      0,
+                                                                      sizeof(unsigned int) * 8,
+                                                                      s));
 
-                              thrust::constant_iterator<size_t> one_iter(1);
+                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
 
-                              thrust::exclusive_scan_by_key(thrust::cuda::par.on(s),
-                                                            segments[circular_fid].begin(),
-                                                            segments[circular_fid].end(),
-                                                            one_iter,
-                                                            count[circular_fid].begin());
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
+                                                                      temp_storage_bytes,
+                                                                      thrust::raw_pointer_cast(segments[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
+                                                                      data->rows,
+                                                                      0,
+                                                                      sizeof(unsigned int) * 8,
+                                                                      s));
 
-                              thrust::permutation_iterator<ElementDoubleIterator, IndexIterator>
-                                  parent_node_sum_iter(parent_node_sum.begin(), segments[circular_fid].begin());
-                              thrust::permutation_iterator<ElementIntIterator, IndexIterator>
-                                  parent_node_count_iter(parent_node_count.begin(), segments[circular_fid].begin());
-
-
-                              thrust::for_each(thrust::cuda::par.on(s),
-                                    thrust::make_zip_iterator(
-                                      thrust::make_tuple(sum[circular_fid].begin(),
-                                                         count[circular_fid].begin(),
-                                                         parent_node_sum_iter,
-                                                         parent_node_count_iter,
-                                                         gain[circular_fid].begin(),
-                                                         fvalue[circular_fid].begin() + 1,
-                                                         fvalue[circular_fid].begin())),
-                                    thrust::make_zip_iterator(
-                                      thrust::make_tuple(sum[circular_fid].end(),
-                                                         count[circular_fid].end(),
-                                                         parent_node_sum_iter + data->rows,
-                                                         parent_node_count_iter + data->rows,
-                                                         gain[circular_fid].end(),
-                                                         fvalue[circular_fid].end(),
-                                                         fvalue[circular_fid].end() - 1)),
-                                  gain_functor(param.min_child_weight));
-
-
-                              thrust::counting_iterator<size_t> iter(0);
-
-
-                              auto tuple_iterator = thrust::make_zip_iterator(
-                                    thrust::make_tuple(gain[circular_fid].begin(),
-                                                       iter));
-
-                              reduce_by_key<<<1,1,0,s>>>(
-                                                    segments[circular_fid].begin(),
-                                                    segments[circular_fid].end(),
-                                                    tuple_iterator,
-                                                    max_key_d[circular_fid].begin(),
-                                                    max_value_d[circular_fid].begin(),
-                                                    binary_pred,
-                                                    binary_op);
-
-                              thrust::copy(thrust::cuda::par.on(s),
-                                           max_key_d[circular_fid].begin(),
-                                           max_key_d[circular_fid].end(),
-                                           max_key[circular_fid].begin());
-
-                              thrust::copy(thrust::cuda::par.on(s),
-                                           max_value_d[circular_fid].begin(),
-                                           max_value_d[circular_fid].end(),
-                                           max_value[circular_fid].begin());
-
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
+                                                                      temp_storage_bytes,
+                                                                      thrust::raw_pointer_cast(segments[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(fvalue[circular_fid].data() + 1),
+                                                                      thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
+                                                                      data->rows,
+                                                                      0,
+                                                                      sizeof(unsigned int) * 8,
+                                                                      s));
+                              if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
                             }
 
                           size_t circular_fid = fid % overlap_depth;
-                          cudaStreamSynchronize(streams[circular_fid]);
+
+                          cudaStream_t s = streams[circular_fid];
+
+                          size_t  temp_storage_bytes  = 0;
+                          void *d_temp_storage = NULL;
+                          size_t temp_storage_count_bytes = 0;
+                          void *d_temp_count_storage = NULL;
+
+                          size_t offset = 0;
+                          cub::ConstantInputIterator<size_t> one_iter(1);
+
+                          if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
+                          for(size_t i = 0; i < lenght && _nodeStat[i].count > 0;  ++i){
+                              d_temp_count_storage = d_temp_storage = NULL;
+                              temp_storage_count_bytes = temp_storage_bytes = 0;
+
+                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
+                                                                    temp_storage_bytes,
+                                                                    thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data() + offset),
+                                                                    thrust::raw_pointer_cast(sum[circular_fid].data() + offset),
+                                                                    _nodeStat[i].count,
+                                                                    s));
+
+                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
+
+                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
+                                                                    temp_storage_bytes,
+                                                                    thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data() + offset),
+                                                                    thrust::raw_pointer_cast(sum[circular_fid].data() + offset),
+                                                                    _nodeStat[i].count,
+                                                                    s));
+
+                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_count_storage,
+                                                                    temp_storage_count_bytes,
+                                                                    one_iter,
+                                                                    thrust::raw_pointer_cast(count[circular_fid].data() + offset),
+                                                                    _nodeStat[i].count,
+                                                                    s));
+
+                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_count_storage, temp_storage_count_bytes, s));
+
+                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_count_storage,
+                                                                    temp_storage_count_bytes,
+                                                                    one_iter,
+                                                                    thrust::raw_pointer_cast(count[circular_fid].data() + offset),
+                                                                    _nodeStat[i].count,
+                                                                    s));
+
+                              offset += _nodeStat[i].count;
+                              if (d_temp_count_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_count_storage));
+                              if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
+
+                            }
+
+                          gain_kernel<<<gridSize, blockSize, 0, s >>>(thrust::raw_pointer_cast(sum[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(count[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
+                                                                      thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                      parent_sum_iter,
+                                                                      parent_count_iter,
+                                                                      data->rows,
+                                                                      gain_param,
+                                                                      thrust::raw_pointer_cast(gain[circular_fid].data()));
 
 
-                          for(size_t i = 0; i < max_key[circular_fid].size(); ++i){
-                              const int node_index = max_key[circular_fid][i];
-                              const thrust::tuple<double, size_t> t = max_value[circular_fid][i];
-                              const double gain_value = thrust::get<0>(t);
+                          size_t offset_max = 0;
+                          cub::KeyValuePair<int, double> *max_pair_d;
+                          cub::KeyValuePair<int, double> *max_pair_h = new cub::KeyValuePair<int, double>();
+                          CubDebugExit(g_allocator.DeviceAllocate((void**)&max_pair_d, sizeof(cub::KeyValuePair<int, double>) * 1, s));
 
-                              if(node_index >= 0 && gain_value > _bestSplit[node_index].gain){
-                                  const size_t index_value = thrust::get<1>(t);
-                                  const float fvalue_prev_val = fvalue[circular_fid][index_value];
-                                  const float fvalue_val = fvalue[circular_fid][index_value + 1];
-                                  const size_t count_val = count[circular_fid][index_value];
-                                  const double sum_val = sum[circular_fid][index_value];
-                                  _bestSplit[node_index].fid = fid;
-                                  _bestSplit[node_index].gain = gain_value;
-                                  _bestSplit[node_index].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
-                                  _bestSplit[node_index].count = count_val;
-                                  _bestSplit[node_index].sum_grad = sum_val;
+                          for(size_t i = 0; i < lenght && _nodeStat[i].count > 0;  ++i){
+                              void     *d_temp_storage_max = NULL;
+                              size_t   temp_storage_bytes_max = 0;
+                              cub::DeviceReduce::ArgMax(d_temp_storage_max,
+                                                        temp_storage_bytes_max,
+                                                        thrust::raw_pointer_cast(gain[circular_fid].data() + offset_max),
+                                                        max_pair_d,
+                                                        _nodeStat[i].count,
+                                                        s);
+
+                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage_max, temp_storage_bytes_max, s));
+
+                              cub::DeviceReduce::ArgMax(d_temp_storage_max,
+                                                        temp_storage_bytes_max,
+                                                        thrust::raw_pointer_cast(gain[circular_fid].data() + offset_max),
+                                                        max_pair_d,
+                                                        _nodeStat[i].count,
+                                                        s);
+                              cudaMemcpyAsync(max_pair_h,
+                                              max_pair_d,
+                                              sizeof(cub::KeyValuePair<int, double>),
+                                              cudaMemcpyDeviceToHost, s);
+
+                              cudaStreamSynchronize(s);
+
+                              if(max_pair_h->value > _bestSplit[i].gain){
+                                const int index_value = max_pair_h->key + offset_max;
+                                const float fvalue_prev_val = fvalue_sorted[circular_fid][index_value];
+                                const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
+                                const size_t count_val = count[circular_fid][index_value];
+                                const double sum_val = sum[circular_fid][index_value];
+                                _bestSplit[i].fid = fid;
+                                _bestSplit[i].gain = max_pair_h->value;
+                                _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
+                                _bestSplit[i].count = count_val;
+                                _bestSplit[i].sum_grad = sum_val;
                                 }
+                              if (d_temp_storage_max) CubDebugExit(g_allocator.DeviceFree(d_temp_storage_max));
+                              offset_max += _nodeStat[i].count;
                             }
                         }
+
                       for(size_t i = 0; i < lenght; ++i){
                           NodeStat &node_stat = _nodeStat[i];
                           Split &split = _bestSplit[i];
@@ -363,11 +417,6 @@ namespace arboretum {
                               _bestSplit[i].sum_grad = node_stat.sum_grad;
                             }
                         }
-//                      for(size_t i = 0; i < overlap_depth; ++i){
-//                          cudaStreamDestroy(streams[i]);
-//                        }
-
-
       }
       void UpdateNodeStat(const int level, const thrust::host_vector<float> &grad, const RegTree *tree){
         if(level != 0){
@@ -449,7 +498,6 @@ namespace arboretum {
               break;
             default:
                throw "Unknown objective function";
-              break;
             }
 
           data->Init(param.initial_y, gradFunc);

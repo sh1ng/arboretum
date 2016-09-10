@@ -1,6 +1,6 @@
-export CXX  = nvcc -arch=compute_61 --default-stream=per-thread
+export CXX  = nvcc -gencode arch=compute_61,code=sm_61 --default-stream=per-thread
 export LDFLAGS= -lm
-export CFLAGS = -O3 -std=c++11 -ccbin=g++ -Xcompiler -fPIC -Xcompiler -O3
+export CFLAGS = -O3  -I../cub/ -std=c++11 -ccbin=g++ -Xcompiler -fPIC -Xcompiler -O3
 SLIB = python-wrapper/arboretum_wrapper.so
 OBJ = io.o param.o garden.o
 
