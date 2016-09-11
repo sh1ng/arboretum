@@ -1,5 +1,6 @@
 #define CUB_STDERR
 
+#include <climits>
 #include <stdio.h>
 #include <limits>
 #include <thrust/device_vector.h>
@@ -31,8 +32,9 @@ namespace arboretum {
     GainFunctionParameters(const unsigned int min_wieght) : min_wieght(min_wieght) {}
    };
 
+    template <class node_type>
     __global__ void gain_kernel(const float *left_sum, const size_t *left_count, float *fvalues, float *fvalue_prevs,
-                                unsigned int *segments, cub::TexObjInputIterator<double> parent_sum_iter,
+                                node_type *segments, cub::TexObjInputIterator<double> parent_sum_iter,
                                 cub::TexObjInputIterator<size_t> parent_count_iter, size_t n, const GainFunctionParameters parameters,
                                 double *gain){
       for (int i = blockDim.x * blockIdx.x + threadIdx.x;
@@ -57,12 +59,13 @@ namespace arboretum {
           }
     }
 
+    template <class node_type>
     class GardenBuilder : public GardenBuilderBase {
     public:
       GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(2),
         g_allocator(cub::CachingDeviceAllocator(32, 1, 5)), param(param), gain_param(param.min_child_weight){
         int minGridSize; 
-        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, gain_kernel, 0, 0);
+        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, gain_kernel<node_type>, 0, 0);
         gridSize = (data->rows + blockSize - 1) / blockSize;
         
         _rowIndex2Node.resize(data->rows, 0);
@@ -75,8 +78,8 @@ namespace arboretum {
         gain = new device_vector<double>[overlap_depth];
         sum = new device_vector<float>[overlap_depth];
         count = new device_vector<size_t>[overlap_depth];
-        segments = new device_vector<unsigned int>[overlap_depth];
-        segments_sorted = new device_vector<unsigned int>[overlap_depth];
+        segments = new device_vector<node_type>[overlap_depth];
+        segments_sorted = new device_vector<node_type>[overlap_depth];
         fvalue = new device_vector<float>[overlap_depth];
         position = new device_vector<int>[overlap_depth];
         grad_sorted = new device_vector<float>[overlap_depth];
@@ -88,8 +91,8 @@ namespace arboretum {
             gain[i]  = device_vector<double>(data->rows);
             sum[i]   = device_vector<float>(data->rows);
             count[i] = device_vector<size_t>(data->rows);
-            segments[i] = device_vector<unsigned int>(data->rows);
-            segments_sorted[i] = device_vector<unsigned int>(data->rows);
+            segments[i] = device_vector<node_type>(data->rows);
+            segments_sorted[i] = device_vector<node_type>(data->rows);
             fvalue[i] = device_vector<float>(data->rows + 1);
             fvalue[i][0] = -std::numeric_limits<float>::infinity();
             fvalue_sorted[i] = device_vector<float>(data->rows + 1);
@@ -146,7 +149,7 @@ namespace arboretum {
       cub::CachingDeviceAllocator g_allocator;
       const TreeParam param;
       const GainFunctionParameters gain_param;
-      host_vector<unsigned int, thrust::cuda::experimental::pinned_allocator< unsigned int > > _rowIndex2Node;
+      host_vector<node_type, thrust::cuda::experimental::pinned_allocator< unsigned int > > _rowIndex2Node;
       std::vector<std::vector<SplitStat> > _featureNodeSplitStat;
       std::vector<NodeStat> _nodeStat;
       std::vector<Split> _bestSplit;
@@ -155,8 +158,8 @@ namespace arboretum {
       device_vector<double> *gain = new device_vector<double>[overlap_depth];
       device_vector<float> *sum = new device_vector<float>[overlap_depth];
       device_vector<size_t> *count = new device_vector<size_t>[overlap_depth];
-      device_vector<unsigned int> *segments = new device_vector<unsigned int>[overlap_depth];
-      device_vector<unsigned int> *segments_sorted = new device_vector<unsigned int>[overlap_depth];
+      device_vector<node_type> *segments = new device_vector<node_type>[overlap_depth];
+      device_vector<node_type> *segments_sorted = new device_vector<node_type>[overlap_depth];
       device_vector<float> *fvalue = new device_vector<float>[overlap_depth];
       device_vector<float> *fvalue_sorted = new device_vector<float>[overlap_depth];
       device_vector<int> *position = new device_vector<int>[overlap_depth];
@@ -207,7 +210,7 @@ namespace arboretum {
             max_value[i] = host_vector<thrust::tuple<double, size_t>>(1 << level);
           }
 
-        device_vector<unsigned int> row2Node = _rowIndex2Node;
+        device_vector<node_type> row2Node = _rowIndex2Node;
         device_vector<float> grad_d = data->grad;
 
 
@@ -501,7 +504,16 @@ namespace arboretum {
             }
 
           data->Init(param.initial_y, gradFunc);
-          _builder = new GardenBuilder(param, data);
+
+          if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
+            _builder = new GardenBuilder<unsigned short>(param, data);
+          else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
+            _builder = new GardenBuilder<unsigned int>(param, data);
+          else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
+            _builder = new GardenBuilder<unsigned long int>(param, data);
+          else
+            throw "unsupported depth";
+
           _init = true;
         }
 

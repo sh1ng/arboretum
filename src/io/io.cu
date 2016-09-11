@@ -1,3 +1,4 @@
+//#include <omp.h>
 #include <vector>
 #include <algorithm>
 #include <functional>
@@ -24,6 +25,8 @@ namespace arboretum {
       if(!_init){
           _gradFunc = func;
           y.resize(y_hat.size(), initial_y);
+
+          #pragma omp parallel for
           for(size_t i = 0; i < data.size(); ++i){
             index[i] = SortedIndex(i);
             std::vector<float> tmp(data[i].size());

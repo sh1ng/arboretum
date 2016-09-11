@@ -1,6 +1,7 @@
 #ifndef BOOSTER_H
 #define BOOSTER_H
 
+//#include <omp.h>
 #include <cmath>
 #include <limits>
 #include <thrust/host_vector.h>
@@ -140,10 +141,9 @@ namespace arboretum {
       }
 
       void Predict(const arboretum::io::DataMatrix *data, const thrust::host_vector<size_t> &row2Node, std::vector<float> &out) const {
-        unsigned int node_id;
+        #pragma omp parallel for
         for(size_t i = 0; i < data->rows; ++i){
-            node_id = row2Node[i];
-            out[i] += leaf_level[node_id];
+            out[i] += leaf_level[row2Node[i]];
           }
       }
     };
