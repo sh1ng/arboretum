@@ -1,6 +1,15 @@
-export CXX  = nvcc -gencode arch=compute_61,code=sm_61 --default-stream=per-thread
+# compiler by default
+export CXX = g++
+OS := $(shell uname)
+
+# MAC OS
+ifeq ($(OS), Darwin)
+export CXX = clang-omp++
+endif
+
+export CC = nvcc -gencode arch=compute_61,code=sm_61 --default-stream=per-thread
 export LDFLAGS= -lm
-export CFLAGS = -O3  -I../cub/ -std=c++11 -Xcompiler -fPIC -Xcompiler -O3
+export CFLAGS = -O3  -I../cub/ -std=c++11 -Xcompiler -fPIC -Xcompiler -O3 -Xcompiler -fopenmp -ccbin=$(CXX)
 SLIB = python-wrapper/arboretum_wrapper.so
 OBJ = io.o param.o garden.o
 
@@ -15,10 +24,10 @@ io.o: src/io/io.cu src/io/io.h src/core/objective.h
 python-wrapper/arboretum_wrapper.so: python-wrapper/arboretum_wrapper.cpp python-wrapper/arboretum_wrapper.h io.o garden.o param.o
 
 $(OBJ) :
-	$(CXX) -c $(CFLAGS) -o $@ $(firstword $(filter %.cpp %.c %.cc %.cu, $^) )
+	$(CC) -c $(CFLAGS) -o $@ $(firstword $(filter %.cpp %.c %.cc %.cu, $^) )
 
 $(SLIB) :
-	$(CXX) $(CFLAGS) -shared -o $@ $(filter %.cpp %.o %.c %.a %.cc %.cu, $^) $(LDFLAGS)
+	$(CC) $(CFLAGS) -shared -o $@ $(filter %.cpp %.o %.c %.a %.cc %.cu, $^) $(LDFLAGS)
 
 
 clean:
