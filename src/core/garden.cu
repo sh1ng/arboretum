@@ -33,21 +33,28 @@ namespace arboretum {
    };
 
     template <class node_type>
-    __global__ void gain_kernel(const float *left_sum, const size_t *left_count, float *fvalues, float *fvalue_prevs,
+    __global__ void gain_kernel(const float *left_sum, float *fvalues, float *fvalue_prevs,
                                 node_type *segments, cub::TexObjInputIterator<double> parent_sum_iter,
                                 cub::TexObjInputIterator<size_t> parent_count_iter, size_t n, const GainFunctionParameters parameters,
                                 double *gain){
-      for (int i = blockDim.x * blockIdx.x + threadIdx.x;
+      for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
                i < n;
                i += gridDim.x * blockDim.x){
-          const unsigned int segment = segments[i];
-          const double left_sum_value = left_sum[i];
-          const size_t left_count_value = left_count[i];
-          const double total_sum = parent_sum_iter[segment];
-          const size_t total_count = parent_count_iter[segment];
+          const node_type segment = segments[i];
+
+          const double left_sum_offset = parent_sum_iter[segment];
+          const double left_sum_value = left_sum[i] - left_sum_offset;
+
+          const size_t left_count_offset = parent_count_iter[segment];
+          const size_t left_count_value = i - left_count_offset;
+
+          const double total_sum = parent_sum_iter[segment + 1] - parent_sum_iter[segment];
+          const size_t total_count = parent_count_iter[segment + 1] - parent_count_iter[segment];
+
           const float fvalue = fvalues[i];
           const float fvalue_prev = fvalue_prevs[i];
           const size_t right_count = total_count - left_count_value;
+
 
           if(left_count_value >= parameters.min_wieght && right_count >= parameters.min_wieght && fvalue != fvalue_prev){
               const size_t d = left_count_value * total_count * (total_count - left_count_value);
@@ -77,7 +84,6 @@ namespace arboretum {
           }
         gain = new device_vector<double>[overlap_depth];
         sum = new device_vector<float>[overlap_depth];
-        count = new device_vector<size_t>[overlap_depth];
         segments = new device_vector<node_type>[overlap_depth];
         segments_sorted = new device_vector<node_type>[overlap_depth];
         fvalue = new device_vector<float>[overlap_depth];
@@ -90,7 +96,6 @@ namespace arboretum {
             streams[i] = s;
             gain[i]  = device_vector<double>(data->rows);
             sum[i]   = device_vector<float>(data->rows);
-            count[i] = device_vector<size_t>(data->rows);
             segments[i] = device_vector<node_type>(data->rows);
             segments_sorted[i] = device_vector<node_type>(data->rows);
             fvalue[i] = device_vector<float>(data->rows + 1);
@@ -131,7 +136,7 @@ namespace arboretum {
 
         for(int i = 0; i < param.depth - 1; ++i){
           InitTreeLevel(i);
-          UpdateNodeStat(i, grad, tree);
+          UpdateNodeStat(i, data, tree);
           FindBestSplits(i, data, grad);
           UpdateTree(i, tree);
           UpdateNodeIndex(i, data, tree);
@@ -172,25 +177,30 @@ namespace arboretum {
       void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad){
         size_t lenght = 1 << level;
 
-        device_vector<double> parent_node_sum(lenght);
-        device_vector<size_t> parent_node_count(lenght);
+        device_vector<double> parent_node_sum(lenght + 1);
+        device_vector<size_t> parent_node_count(lenght + 1);
+        host_vector<double> parent_node_sum_h(lenght + 1);
+        host_vector<size_t> parent_node_count_h(lenght + 1);
+
         {
-          host_vector<double> parent_node_sum_h(lenght);
-          host_vector<size_t> parent_node_count_h(lenght);
+          parent_node_sum_h[0] = 0.0;
+          parent_node_count_h[0] = 0;
 
           for(size_t i = 0; i < lenght; ++i){
-              parent_node_count_h[i] = _nodeStat[i].count;
-              parent_node_sum_h[i] = _nodeStat[i].sum_grad;
+              parent_node_count_h[i + 1] = parent_node_count_h[i] + _nodeStat[i].count;
+              parent_node_sum_h[i + 1] = parent_node_sum_h[i] + _nodeStat[i].sum_grad;
             }
           parent_node_sum = parent_node_sum_h;
           parent_node_count = parent_node_count_h;
         }
 
         cub::TexObjInputIterator<double> parent_sum_iter;
-        parent_sum_iter.BindTexture(thrust::raw_pointer_cast(parent_node_sum.data()), sizeof(double) * lenght);
+        parent_sum_iter.BindTexture(thrust::raw_pointer_cast(parent_node_sum.data()), sizeof(double) * (lenght + 1));
 
         cub::TexObjInputIterator<size_t> parent_count_iter;
-        parent_count_iter.BindTexture(thrust::raw_pointer_cast(parent_node_count.data()), sizeof(size_t) * lenght);
+        parent_count_iter.BindTexture(thrust::raw_pointer_cast(parent_node_count.data()), sizeof(size_t) * (lenght + 1));
+
+
 
 
         device_vector<int> *max_key_d = new device_vector<int>[overlap_depth];
@@ -265,7 +275,7 @@ namespace arboretum {
                                                                       thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
                                                                       data->rows,
                                                                       0,
-                                                                      sizeof(unsigned int) * 8,
+                                                                      level + 1,
                                                                       s));
 
                               CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
@@ -278,7 +288,7 @@ namespace arboretum {
                                                                       thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
                                                                       data->rows,
                                                                       0,
-                                                                      sizeof(unsigned int) * 8,
+                                                                      level + 1,
                                                                       s));
 
                               CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
@@ -289,7 +299,7 @@ namespace arboretum {
                                                                       thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
                                                                       data->rows,
                                                                       0,
-                                                                      sizeof(unsigned int) * 8,
+                                                                      level + 1,
                                                                       s));
                               if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
                             }
@@ -300,57 +310,28 @@ namespace arboretum {
 
                           size_t  temp_storage_bytes  = 0;
                           void *d_temp_storage = NULL;
-                          size_t temp_storage_count_bytes = 0;
-                          void *d_temp_count_storage = NULL;
 
-                          size_t offset = 0;
-                          cub::ConstantInputIterator<size_t> one_iter(1);
+
+                          CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
+                                                                temp_storage_bytes,
+                                                                thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
+                                                                thrust::raw_pointer_cast(sum[circular_fid].data()),
+                                                                data->rows,
+                                                                s));
+
+                          CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
+
+                          CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
+                                                                temp_storage_bytes,
+                                                                thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
+                                                                thrust::raw_pointer_cast(sum[circular_fid].data()),
+                                                                data->rows,
+                                                                s));
 
                           if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
-                          for(size_t i = 0; i < lenght && _nodeStat[i].count > 0;  ++i){
-                              d_temp_count_storage = d_temp_storage = NULL;
-                              temp_storage_count_bytes = temp_storage_bytes = 0;
 
-                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
-                                                                    temp_storage_bytes,
-                                                                    thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data() + offset),
-                                                                    thrust::raw_pointer_cast(sum[circular_fid].data() + offset),
-                                                                    _nodeStat[i].count,
-                                                                    s));
-
-                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
-
-                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
-                                                                    temp_storage_bytes,
-                                                                    thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data() + offset),
-                                                                    thrust::raw_pointer_cast(sum[circular_fid].data() + offset),
-                                                                    _nodeStat[i].count,
-                                                                    s));
-
-                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_count_storage,
-                                                                    temp_storage_count_bytes,
-                                                                    one_iter,
-                                                                    thrust::raw_pointer_cast(count[circular_fid].data() + offset),
-                                                                    _nodeStat[i].count,
-                                                                    s));
-
-                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_count_storage, temp_storage_count_bytes, s));
-
-                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_count_storage,
-                                                                    temp_storage_count_bytes,
-                                                                    one_iter,
-                                                                    thrust::raw_pointer_cast(count[circular_fid].data() + offset),
-                                                                    _nodeStat[i].count,
-                                                                    s));
-
-                              offset += _nodeStat[i].count;
-                              if (d_temp_count_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_count_storage));
-                              if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
-
-                            }
 
                           gain_kernel<<<gridSize, blockSize, 0, s >>>(thrust::raw_pointer_cast(sum[circular_fid].data()),
-                                                                      thrust::raw_pointer_cast(count[circular_fid].data()),
                                                                       thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
                                                                       thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data()),
                                                                       thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
@@ -361,7 +342,6 @@ namespace arboretum {
                                                                       thrust::raw_pointer_cast(gain[circular_fid].data()));
 
 
-                          size_t offset_max = 0;
                           cub::KeyValuePair<int, double> *max_pair_d;
                           cub::KeyValuePair<int, double> *max_pair_h = new cub::KeyValuePair<int, double>();
                           CubDebugExit(g_allocator.DeviceAllocate((void**)&max_pair_d, sizeof(cub::KeyValuePair<int, double>) * 1, s));
@@ -371,7 +351,7 @@ namespace arboretum {
                               size_t   temp_storage_bytes_max = 0;
                               cub::DeviceReduce::ArgMax(d_temp_storage_max,
                                                         temp_storage_bytes_max,
-                                                        thrust::raw_pointer_cast(gain[circular_fid].data() + offset_max),
+                                                        thrust::raw_pointer_cast(gain[circular_fid].data() + parent_node_count_h[i]),
                                                         max_pair_d,
                                                         _nodeStat[i].count,
                                                         s);
@@ -380,7 +360,7 @@ namespace arboretum {
 
                               cub::DeviceReduce::ArgMax(d_temp_storage_max,
                                                         temp_storage_bytes_max,
-                                                        thrust::raw_pointer_cast(gain[circular_fid].data() + offset_max),
+                                                        thrust::raw_pointer_cast(gain[circular_fid].data() + parent_node_count_h[i]),
                                                         max_pair_d,
                                                         _nodeStat[i].count,
                                                         s);
@@ -391,20 +371,21 @@ namespace arboretum {
 
                               cudaStreamSynchronize(s);
 
+
                               if(max_pair_h->value > _bestSplit[i].gain){
-                                const int index_value = max_pair_h->key + offset_max;
+                                const int index_value = max_pair_h->key + parent_node_count_h[i];
                                 const float fvalue_prev_val = fvalue_sorted[circular_fid][index_value];
                                 const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
-                                const size_t count_val = count[circular_fid][index_value];
-                                const double sum_val = sum[circular_fid][index_value];
+                                const size_t count_val = max_pair_h->key;
+                                const double sum_val = sum[circular_fid][index_value] - parent_node_sum_h[i];
                                 _bestSplit[i].fid = fid;
                                 _bestSplit[i].gain = max_pair_h->value;
                                 _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
                                 _bestSplit[i].count = count_val;
                                 _bestSplit[i].sum_grad = sum_val;
+
                                 }
                               if (d_temp_storage_max) CubDebugExit(g_allocator.DeviceFree(d_temp_storage_max));
-                              offset_max += _nodeStat[i].count;
                             }
                         }
 
@@ -421,7 +402,7 @@ namespace arboretum {
                             }
                         }
       }
-      void UpdateNodeStat(const int level, const thrust::host_vector<float> &grad, const RegTree *tree){
+      void UpdateNodeStat(const int level, const io::DataMatrix *data, const RegTree *tree){
         if(level != 0){
         const unsigned int offset = Node::HeapOffset(level);
         const unsigned int offset_next = Node::HeapOffset(level + 1);
@@ -440,10 +421,9 @@ namespace arboretum {
             _bestSplit[i].Clean();
           }
           } else {
-            for(size_t i = 0; i < grad.size(); ++i){
-                int node = _rowIndex2Node[i];
-                _nodeStat[node].count++;
-                _nodeStat[node].sum_grad += grad[i];
+            _nodeStat[0].count = data->rows;
+            for(size_t i = 0; i < data->rows; ++i){
+                _nodeStat[0].sum_grad += data->grad[i];
               }
           }
         for(size_t i = 0, len = 1 << level; i < len; ++i){
@@ -516,8 +496,6 @@ namespace arboretum {
 
           _init = true;
         }
-
-      _builder->InitGrowingTree();
 
       if(grad == NULL){
           SetInitial(data, data->y);
