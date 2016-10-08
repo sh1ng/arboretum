@@ -19,6 +19,7 @@ namespace arboretum {
                                           VoidPointer *out){
       try{
         DataMatrix* mat = new DataMatrix(nrow, ncol);
+        #pragma omp parallel for
         for(int i = 0; i<ncol*nrow; ++i){
             mat->data[i % ncol][i / ncol] = data[i];
           }
@@ -34,8 +35,9 @@ namespace arboretum {
    try{
         DataMatrix *data_ptr = static_cast<DataMatrix*>(data);
         data_ptr->y_hat.reserve(data_ptr->rows);
+        #pragma omp parallel for
         for(size_t i = 0; i < data_ptr->rows; ++i){
-          data_ptr->y_hat.push_back(y[i]);
+          data_ptr->y_hat[i] = y[i];
         }
         return NULL;
       } catch(const char* error){
@@ -84,6 +86,7 @@ namespace arboretum {
         garden_p->Predict(data_p, result);
 
         float* p = new float[result.size()];
+        #pragma omp parallel for
         for(size_t i = 0; i < result.size(); ++i){
             p[i] = result[i];
           }

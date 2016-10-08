@@ -129,6 +129,7 @@ namespace arboretum {
       }
 
       void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out) const {
+        #pragma omp parallel for
         for(size_t i = 0; i < data->rows; ++i){
             unsigned int node_id = 0;
             Node current_node = nodes[node_id];

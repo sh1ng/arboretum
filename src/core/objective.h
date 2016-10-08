@@ -8,10 +8,13 @@ public:
   static inline float Sigmoid(float x){
     return 1.0f / (1.0f + std::exp(-x));
   }
-  static inline float Regression(float y, float y_hat){
+  static inline double Sigmoid(double x){
+    return 1.0f / (1.0f + std::exp(-x));
+  }
+  static inline double Regression(double y, double y_hat){
     return 2.0 * (y - y_hat);
   }
-  static inline float LogReg(float y, float y_hat){
+  static inline double LogReg(double y, double y_hat){
     return Sigmoid(y) - y_hat;
   }
 };

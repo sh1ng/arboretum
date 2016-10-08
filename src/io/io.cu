@@ -21,7 +21,7 @@ namespace arboretum {
       }
     }
 
-    void DataMatrix::Init(const float initial_y, std::function<float const(const float, const float)> func){
+    void DataMatrix::Init(const float initial_y, std::function<double(const double, const double)> func){
       if(!_init){
           _gradFunc = func;
           y.resize(y_hat.size(), initial_y);
@@ -53,6 +53,7 @@ namespace arboretum {
     }
 
     void DataMatrix::UpdateGrad(){
+      #pragma omp parallel for
       for(size_t i = 0; i < rows; ++i){
           grad[i] = _gradFunc(y[i], y_hat[i]);
         }
