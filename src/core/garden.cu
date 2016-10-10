@@ -33,12 +33,13 @@ namespace arboretum {
     GainFunctionParameters(const unsigned int min_wieght) : min_wieght(min_wieght) {}
    };
 
-    template <class d_type>
-    __global__ void gather_kernel(const int *position, const d_type *in, d_type *out, const size_t n){
+    template <class type1, class type2>
+    __global__ void gather_kernel(const int *position, const type1 *in1, type1 *out1, type2 *in2, type2 *out2, const size_t n){
       for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
                i < n;
                i += gridDim.x * blockDim.x){
-          out[i] = in[position[i]];
+          out1[i] = in1[position[i]];
+          out2[i] = in2[position[i]];
         }
     }
 
@@ -88,13 +89,8 @@ namespace arboretum {
 
         minGridSize = 0;
 
-        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGatherInt, gather_kernel<node_type>, 0, 0);
-        gridSizeGatherInt = (data->rows + blockSizeGatherInt - 1) / blockSizeGatherInt;
-
-        minGridSize = 0;
-
-        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGatherFloat, gather_kernel<float_type>, 0, 0);
-        gridSizeGatherFloat = (data->rows + blockSizeGatherFloat - 1) / blockSizeGatherFloat;
+        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGather, gather_kernel<node_type, float_type>, 0, 0);
+        gridSizeGather = (data->rows + blockSizeGather - 1) / blockSizeGather;
 
         row2Node.resize(data->rows);
         _rowIndex2Node.resize(data->rows, 0);
@@ -207,11 +203,8 @@ namespace arboretum {
       int blockSizeGain;
       int gridSizeGain;
 
-      int blockSizeGatherFloat;
-      int gridSizeGatherFloat;
-
-      int blockSizeGatherInt;
-      int gridSizeGatherInt;
+      int blockSizeGather;
+      int gridSizeGather;
 
       void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad){
 
@@ -265,14 +258,11 @@ namespace arboretum {
                                               data->rows * sizeof(int),
                                               cudaMemcpyHostToDevice, s);
 
-                              gather_kernel<<<gridSizeGatherFloat, blockSizeGatherFloat, 0, s >>>(thrust::raw_pointer_cast(position[circular_fid].data()),
-                                                                          thrust::raw_pointer_cast(grad_d.data()),
-                                                                          thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
-                                                                          data->rows);
-
-                              gather_kernel<<<gridSizeGatherInt, blockSizeGatherInt, 0, s >>>(thrust::raw_pointer_cast(position[circular_fid].data()),
+                              gather_kernel<<<gridSizeGather, blockSizeGather, 0, s >>>(thrust::raw_pointer_cast(position[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(row2Node.data()),
                                                                           thrust::raw_pointer_cast(segments[circular_fid].data()),
+                                                                          thrust::raw_pointer_cast(grad_d.data()),
+                                                                          thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
                                                                           data->rows);
 
                               size_t  temp_storage_bytes  = 0;
