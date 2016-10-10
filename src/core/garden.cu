@@ -79,9 +79,8 @@ namespace arboretum {
     template <typename node_type, typename float_type>
     class GardenBuilder : public GardenBuilderBase {
     public:
-      GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(2),
-        g_allocator(true), param(param), gain_param(param.min_child_weight){
-        CubDebugExit(g_allocator.SetMaxCachedBytes(1024*1024*1024));
+      GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(3),
+        g_allocator(8, 3, 12, 1024L*1024L*1024L*2L, true), param(param), gain_param(param.min_child_weight){
 
         int minGridSize; 
         cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGain, gain_kernel<node_type, float_type>, 0, 0);
@@ -362,7 +361,6 @@ namespace arboretum {
                                               thrust::raw_pointer_cast(max_d[circular_fid].data()),
                                               lenght * sizeof(cub::KeyValuePair<int, float_type>),
                                               cudaMemcpyDeviceToHost, s);
-
                             }
 
                           size_t circular_fid = fid % overlap_depth;

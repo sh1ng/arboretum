@@ -21,16 +21,20 @@ namespace arboretum {
       }
     }
 
-    void DataMatrix::Init(const float initial_y, std::function<double(const double, const double)> func){
+    void DataMatrix::Init(const float initial_y, std::function<float(const float, const float)> func){
       if(!_init){
           _gradFunc = func;
           y.resize(y_hat.size(), initial_y);
 
           #pragma omp parallel for
-          for(size_t i = 0; i < data.size(); ++i){
+          for(size_t i = 0; i < columns; ++i){
             index[i] = SortedIndex(i);
+          }
+
+          for(size_t i = 0; i < columns; ++i){
             std::vector<float> tmp(data[i].size());
-            for(size_t j = 0; j < data[i].size(); ++j){
+            #pragma omp parallel for
+            for(size_t j = 0; j < rows; ++j){
                 tmp[j] = data[i][index[i][j]];
               }
             sorted_data[i] = tmp;
