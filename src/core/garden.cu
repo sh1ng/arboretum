@@ -257,6 +257,8 @@ namespace arboretum {
                                               data->rows * sizeof(int),
                                               cudaMemcpyHostToDevice, s);
 
+                              cudaStreamSynchronize(s);
+
                               gather_kernel<<<gridSizeGather, blockSizeGather, 0, s >>>(thrust::raw_pointer_cast(position[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(row2Node.data()),
                                                                           thrust::raw_pointer_cast(segments[circular_fid].data()),
@@ -266,7 +268,6 @@ namespace arboretum {
 
                               size_t  temp_storage_bytes  = 0;
                               void *d_temp_storage = NULL;
-
 
                               CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
                                                                       temp_storage_bytes,
