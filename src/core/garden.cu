@@ -82,6 +82,8 @@ namespace arboretum {
       GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(3),
         g_allocator(8, 3, 12, 1024L*1024L*1024L*2L, true), param(param), gain_param(param.min_child_weight){
 
+        const int lenght = 1 << param.depth;
+
         int minGridSize; 
         cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGain, gain_kernel<node_type, float_type>, 0, 0);
         gridSizeGain = (data->rows + blockSizeGain - 1) / blockSizeGain;
@@ -108,6 +110,11 @@ namespace arboretum {
         grad_sorted = new device_vector<float_type>[overlap_depth];
         max_d = new device_vector<cub::KeyValuePair<int, float_type> >[overlap_depth];
         max_h = new host_vector<cub::KeyValuePair<int, float_type>, pinned_allocator<cub::KeyValuePair<int, float_type> > >[overlap_depth];
+
+        parent_node_sum.resize(lenght + 1);
+        parent_node_count.resize(lenght + 1);
+        parent_node_sum_h.resize(lenght + 1);
+        parent_node_count_h.resize(lenght + 1);
 
 
         for(size_t i = 0; i < overlap_depth; ++i){
@@ -177,7 +184,7 @@ namespace arboretum {
       cub::CachingDeviceAllocator g_allocator;
       const TreeParam param;
       const GainFunctionParameters gain_param;
-      host_vector<node_type, thrust::cuda::experimental::pinned_allocator< unsigned int > > _rowIndex2Node;
+      host_vector<node_type, thrust::cuda::experimental::pinned_allocator< node_type > > _rowIndex2Node;
       std::vector<std::vector<SplitStat> > _featureNodeSplitStat;
       std::vector<NodeStat> _nodeStat;
       std::vector<Split> _bestSplit;
@@ -197,7 +204,11 @@ namespace arboretum {
       device_vector<cub::KeyValuePair<int, float_type> > *max_d;
       host_vector<cub::KeyValuePair<int, float_type>, pinned_allocator<cub::KeyValuePair<int, float_type> > > *max_h;
       device_vector<float_type> grad_d;
-      device_vector<node_type> row2Node;
+      device_vector<node_type> row2Node; 
+      device_vector<float_type> parent_node_sum;
+      device_vector<int> parent_node_count;
+      host_vector<float_type> parent_node_sum_h;
+      host_vector<int> parent_node_count_h;
 
       int blockSizeGain;
       int gridSizeGain;
@@ -207,12 +218,12 @@ namespace arboretum {
 
       void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad){
 
-        size_t lenght = 1 << level;
+        cudaMemcpyAsync(thrust::raw_pointer_cast((row2Node.data())),
+                        thrust::raw_pointer_cast(_rowIndex2Node.data()),
+                        data->rows * sizeof(node_type),
+                        cudaMemcpyHostToDevice, streams[0]);
 
-        device_vector<float_type> parent_node_sum(lenght + 1);
-        device_vector<int> parent_node_count(lenght + 1);
-        host_vector<float_type> parent_node_sum_h(lenght + 1);
-        host_vector<int> parent_node_count_h(lenght + 1);
+        size_t lenght = 1 << level;
 
         {
           parent_node_sum_h[0] = 0.0;
@@ -230,9 +241,9 @@ namespace arboretum {
         parent_sum_iter.BindTexture(thrust::raw_pointer_cast(parent_node_sum.data()), sizeof(float_type) * (lenght + 1));
 
         cub::TexObjInputIterator<int> parent_count_iter;
-        parent_count_iter.BindTexture(thrust::raw_pointer_cast(parent_node_count.data()), sizeof(size_t) * (lenght + 1));
+        parent_count_iter.BindTexture(thrust::raw_pointer_cast(parent_node_count.data()), sizeof(int) * (lenght + 1));
 
-        thrust::copy(_rowIndex2Node.begin(), _rowIndex2Node.end(), row2Node.begin());
+
 
                       for(size_t fid = 0; fid < data->columns; ++fid){
 
