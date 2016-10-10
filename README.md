@@ -6,6 +6,12 @@
 * Cuda thrust - it's a part of cuda toolkit so it should work out of box.
 * Cuda cub https://github.com/NVlabs/cub located as a sibling of the project. Change location in the makefile if require. 
 
+## Linux
+* gcc-5
+
+## MacOS
+* clang-omp++ can be install by brew
+
 ## Installation process is similar to xgboost
 * $ make 
 * $ cd python-wrapper
