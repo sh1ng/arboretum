@@ -79,8 +79,8 @@ namespace arboretum {
     template <typename node_type, typename float_type>
     class GardenBuilder : public GardenBuilderBase {
     public:
-      GardenBuilder(const TreeParam &param, const io::DataMatrix* data) : overlap_depth(3),
-        g_allocator(8, 3, 12, 1024L*1024L*1024L*2L, true), param(param), gain_param(param.min_child_weight){
+      GardenBuilder(const TreeParam &param, const io::DataMatrix* data, const unsigned short overlap) : overlap_depth(overlap),
+        param(param), gain_param(param.min_child_weight){
 
         const int lenght = 1 << param.depth;
 
@@ -134,9 +134,83 @@ namespace arboretum {
             grad_sorted_sorted[i] = device_vector<float_type>(data->rows);
             max_d[i] = device_vector< cub::KeyValuePair<int, float_type> >(1 << param.depth);
             max_h[i] = thrust::host_vector< cub::KeyValuePair<int, float_type>, thrust::cuda::experimental::pinned_allocator<  cub::KeyValuePair<int, float_type> > >(1 << param.depth);
+            temp_bytes_allocated[i] = 0;
           }
 
+        {
+            size_t max = 0;
+
+            size_t  temp_storage_bytes  = 0;
+
+            CubDebugExit(cub::DeviceRadixSort::SortPairs(NULL,
+                                                    temp_storage_bytes,
+                                                    thrust::raw_pointer_cast(segments[0].data()),
+                                                    thrust::raw_pointer_cast(segments_sorted[0].data()),
+                                                    thrust::raw_pointer_cast(grad_sorted[0].data()),
+                                                    thrust::raw_pointer_cast(grad_sorted_sorted[0].data()),
+                                                    data->rows,
+                                                    0,
+                                                    1));
+            max = std::max(max, temp_storage_bytes);
+
+            CubDebugExit(cub::DeviceRadixSort::SortPairs(NULL,
+                                                    temp_storage_bytes,
+                                                    thrust::raw_pointer_cast(segments[0].data()),
+                                                    thrust::raw_pointer_cast(segments_sorted[0].data()),
+                                                    thrust::raw_pointer_cast(fvalue[0].data() + 1),
+                                                    thrust::raw_pointer_cast(fvalue_sorted[0].data() + 1),
+                                                    data->rows,
+                                                    0,
+                                                    1));
+
+            max = std::max(max, temp_storage_bytes);
+
+            temp_storage_bytes = 0;
+
+            CubDebugExit(cub::  DeviceScan::ExclusiveSum(NULL,
+                                                  temp_storage_bytes,
+                                                  thrust::raw_pointer_cast(grad_sorted_sorted[0].data()),
+                                                  thrust::raw_pointer_cast(sum[0].data()),
+                                                  data->rows
+                                                  ));
+
+            max = std::max(max, temp_storage_bytes);
+
+            temp_storage_bytes = 0;
+
+            cub::DeviceSegmentedReduce::ArgMax(NULL,
+                           temp_storage_bytes,
+                           thrust::raw_pointer_cast(gain[0].data()),
+                           thrust::raw_pointer_cast(max_d[0].data()),
+                           lenght,
+                           thrust::raw_pointer_cast(parent_node_count.data()),
+                           thrust::raw_pointer_cast(parent_node_count.data() + 1)
+                           );
+
+
+            max = std::max(max, temp_storage_bytes);
+            for(size_t i = 0; i < overlap_depth; ++i){
+                AllocateMemoryIfRequire(i, max);
+              }
+        }
+
     }
+      virtual size_t MemoryRequirementsPerRecord() override {
+        return sizeof(node_type) + // node
+            sizeof(float_type) + //grad
+            (
+            sizeof(float_type) + // gain
+            sizeof(float_type) + // sum
+            sizeof(node_type) + // segments
+            sizeof(node_type) + // segments_sorted
+            sizeof(float) + //fvalue
+            sizeof(int) + // position
+            sizeof(float_type) + // grad_sorted
+            sizeof(float_type) // grad_sorted_sorted
+              ) * overlap_depth;
+
+      }
+
       virtual void InitGrowingTree() override {
         std::fill(_rowIndex2Node.begin(), _rowIndex2Node.end(), 0);
         for(size_t i = 0; i < _featureNodeSplitStat.size(); ++i){
@@ -153,6 +227,7 @@ namespace arboretum {
       }
 
       virtual void InitTreeLevel(const int level) override {
+        #pragma omp parallel for
         for(size_t i = 0; i < _featureNodeSplitStat.size(); ++i){
             for(size_t j = 0; j < _featureNodeSplitStat[i].size(); ++j){
                 _featureNodeSplitStat[i][j].Clean();
@@ -181,7 +256,6 @@ namespace arboretum {
 
     private:
       const unsigned short overlap_depth;
-      cub::CachingDeviceAllocator g_allocator;
       const TreeParam param;
       const GainFunctionParameters gain_param;
       host_vector<node_type, thrust::cuda::experimental::pinned_allocator< node_type > > _rowIndex2Node;
@@ -209,12 +283,26 @@ namespace arboretum {
       device_vector<int> parent_node_count;
       host_vector<float_type> parent_node_sum_h;
       host_vector<int> parent_node_count_h;
+      size_t* temp_bytes_allocated = new size_t[overlap_depth];
+      void** temp_bytes = new void*[overlap_depth];
+
 
       int blockSizeGain;
       int gridSizeGain;
 
       int blockSizeGather;
       int gridSizeGather;
+
+      inline void AllocateMemoryIfRequire(const size_t circular_fid, const size_t bytes){
+        if(temp_bytes_allocated[circular_fid] == 0){
+            CubDebugExit(cudaMalloc(&(temp_bytes[circular_fid]), bytes));
+            temp_bytes_allocated[circular_fid] = bytes;
+          } else if (temp_bytes_allocated[circular_fid] < bytes){
+            CubDebugExit(cudaFree(temp_bytes[circular_fid]));
+            CubDebugExit(cudaMalloc(&(temp_bytes[circular_fid]), bytes));
+            temp_bytes_allocated[circular_fid] = bytes;
+          }
+      }
 
       void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad){
 
@@ -258,19 +346,35 @@ namespace arboretum {
 
                               cudaStream_t s = streams[circular_fid];
 
-                              cudaMemcpyAsync(thrust::raw_pointer_cast((&fvalue[circular_fid].data()[1])),
-                                              thrust::raw_pointer_cast(data->sorted_data[active_fid].data()),
-                                              data->rows * sizeof(float),
-                                              cudaMemcpyHostToDevice, s);
+                              device_vector<float>* fvalue_tmp = NULL;
 
-                              cudaMemcpyAsync(thrust::raw_pointer_cast(position[circular_fid].data()),
+                              if(data->sorted_data_device[active_fid].size() > 0){
+                                  fvalue_tmp = const_cast<device_vector<float>*>(&(data->sorted_data_device[active_fid]));
+                                } else{
+                                  cudaMemcpyAsync(thrust::raw_pointer_cast((&fvalue[circular_fid].data()[1])),
+                                                  thrust::raw_pointer_cast(data->sorted_data[active_fid].data()),
+                                                  data->rows * sizeof(float),
+                                                  cudaMemcpyHostToDevice, s);
+                                  cudaStreamSynchronize(s);
+                                  fvalue_tmp = const_cast<device_vector<float>*>(&(fvalue[circular_fid]));
+                                }
+
+                              device_vector<int>* index_tmp = NULL;
+
+                              if(data->index_device[active_fid].size() > 0){
+                                  index_tmp = const_cast<device_vector<int>*>(&(data->index_device[active_fid]));
+                                } else {
+                                cudaMemcpyAsync(thrust::raw_pointer_cast(position[circular_fid].data()),
                                               thrust::raw_pointer_cast(data->index[active_fid].data()),
                                               data->rows * sizeof(int),
                                               cudaMemcpyHostToDevice, s);
+                                cudaStreamSynchronize(s);
+                                index_tmp = const_cast<device_vector<int>*>(&(position[circular_fid]));
+                                }
 
                               cudaStreamSynchronize(s);
 
-                              gather_kernel<<<gridSizeGather, blockSizeGather, 0, s >>>(thrust::raw_pointer_cast(position[circular_fid].data()),
+                              gather_kernel<<<gridSizeGather, blockSizeGather, 0, s >>>(thrust::raw_pointer_cast(index_tmp->data()),
                                                                           thrust::raw_pointer_cast(row2Node.data()),
                                                                           thrust::raw_pointer_cast(segments[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(grad_d.data()),
@@ -278,9 +382,8 @@ namespace arboretum {
                                                                           data->rows);
 
                               size_t  temp_storage_bytes  = 0;
-                              void *d_temp_storage = NULL;
 
-                              CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(NULL,
                                                                       temp_storage_bytes,
                                                                       thrust::raw_pointer_cast(segments[circular_fid].data()),
                                                                       thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
@@ -291,9 +394,7 @@ namespace arboretum {
                                                                       level + 1,
                                                                       s));
 
-                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
-
-                              CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(temp_bytes[circular_fid],
                                                                       temp_storage_bytes,
                                                                       thrust::raw_pointer_cast(segments[circular_fid].data()),
                                                                       thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
@@ -303,39 +404,44 @@ namespace arboretum {
                                                                       0,
                                                                       level + 1,
                                                                       s));
+                              temp_storage_bytes = 0;
 
-                              CubDebugExit(cub::DeviceRadixSort::SortPairs(d_temp_storage,
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(NULL,
                                                                       temp_storage_bytes,
                                                                       thrust::raw_pointer_cast(segments[circular_fid].data()),
                                                                       thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-                                                                      thrust::raw_pointer_cast(fvalue[circular_fid].data() + 1),
+                                                                      thrust::raw_pointer_cast(fvalue_tmp->data() + 1),
                                                                       thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
                                                                       data->rows,
                                                                       0,
                                                                       level + 1,
                                                                       s));
-                              if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
-                              d_temp_storage = NULL;
+
+                              CubDebugExit(cub::DeviceRadixSort::SortPairs(temp_bytes[circular_fid],
+                                                                      temp_storage_bytes,
+                                                                      thrust::raw_pointer_cast(segments[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                      thrust::raw_pointer_cast(fvalue_tmp->data() + 1),
+                                                                      thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
+                                                                      data->rows,
+                                                                      0,
+                                                                      level + 1,
+                                                                      s));
                               temp_storage_bytes = 0;
 
-                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
+                              CubDebugExit(cub::DeviceScan::ExclusiveSum(NULL,
                                                                     temp_storage_bytes,
                                                                     thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
                                                                     thrust::raw_pointer_cast(sum[circular_fid].data()),
                                                                     data->rows,
                                                                     s));
 
-                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
-
-                              CubDebugExit(cub::DeviceScan::ExclusiveSum(d_temp_storage,
+                              CubDebugExit(cub::DeviceScan::ExclusiveSum(temp_bytes[circular_fid],
                                                                     temp_storage_bytes,
                                                                     thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
                                                                     thrust::raw_pointer_cast(sum[circular_fid].data()),
                                                                     data->rows,
                                                                     s));
-
-                              if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
-                              d_temp_storage = NULL;
                               temp_storage_bytes = 0;
 
                               gain_kernel<<<gridSizeGain, blockSizeGain, 0, s >>>(thrust::raw_pointer_cast(sum[circular_fid].data()),
@@ -347,7 +453,7 @@ namespace arboretum {
                                                                           gain_param,
                                                                           thrust::raw_pointer_cast(gain[circular_fid].data()));
 
-                              cub::DeviceSegmentedReduce::ArgMax(d_temp_storage,
+                              cub::DeviceSegmentedReduce::ArgMax(NULL,
                                              temp_storage_bytes,
                                              thrust::raw_pointer_cast(gain[circular_fid].data()),
                                              thrust::raw_pointer_cast(max_d[circular_fid].data()),
@@ -356,9 +462,7 @@ namespace arboretum {
                                              thrust::raw_pointer_cast(parent_node_count.data() + 1),
                                              s);
 
-                              CubDebugExit(g_allocator.DeviceAllocate(&d_temp_storage, temp_storage_bytes, s));
-
-                              cub::DeviceSegmentedReduce::ArgMax(d_temp_storage,
+                              cub::DeviceSegmentedReduce::ArgMax(temp_bytes[circular_fid],
                                              temp_storage_bytes,
                                              thrust::raw_pointer_cast(gain[circular_fid].data()),
                                              thrust::raw_pointer_cast(max_d[circular_fid].data()),
@@ -366,8 +470,6 @@ namespace arboretum {
                                              thrust::raw_pointer_cast(parent_node_count.data()),
                                              thrust::raw_pointer_cast(parent_node_count.data() + 1),
                                              s);
-
-                              if (d_temp_storage) CubDebugExit(g_allocator.DeviceFree(d_temp_storage));
 
                               cudaMemcpyAsync(thrust::raw_pointer_cast(max_h[circular_fid].data()),
                                               thrust::raw_pointer_cast(max_d[circular_fid].data()),
@@ -418,7 +520,11 @@ namespace arboretum {
         const unsigned int offset_next = Node::HeapOffset(level + 1);
         std::vector<NodeStat> tmp(_nodeStat.size());
         std::copy(_nodeStat.begin(), _nodeStat.end(), tmp.begin());
-        for(size_t i = 0, len = 1 << (level - 1); i < len; ++i){
+
+        size_t len = 1 << (level - 1);
+
+        #pragma omp parallel for
+        for(size_t i = 0; i < len; ++i){
             _nodeStat[tree->ChildNode(i + offset, true) - offset_next].count = _bestSplit[i].count;
             _nodeStat[tree->ChildNode(i + offset, true) - offset_next].sum_grad = _bestSplit[i].sum_grad;
 
@@ -437,7 +543,11 @@ namespace arboretum {
               }
             _nodeStat[0].sum_grad = sum;
           }
-        for(size_t i = 0, len = 1 << level; i < len; ++i){
+
+        size_t len = 1 << level;
+
+        #pragma omp parallel for
+        for(size_t i = 0; i < len; ++i){
             _nodeStat[i].gain = (_nodeStat[i].sum_grad * _nodeStat[i].sum_grad) / _nodeStat[i].count;
             _bestSplit[i].Clean();
           }
@@ -445,7 +555,11 @@ namespace arboretum {
 
       void UpdateTree(const int level, RegTree *tree) const {
         unsigned int offset = Node::HeapOffset(level);
-        for(size_t i = 0, len = 1 << level; i < len; ++i){
+
+        const size_t len = 1 << level;
+
+        #pragma omp parallel for
+        for(size_t i = 0; i < len; ++i){
             const Split &best = _bestSplit[i];
             tree->nodes[i + offset].threshold = best.split_value;
             tree->nodes[i + offset].fid = best.fid;
@@ -497,13 +611,24 @@ namespace arboretum {
           data->Init(param.initial_y, gradFunc);
 
           if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned short, float>(param, data);
+            _builder = new GardenBuilder<unsigned short, float>(param, data, 2);
           else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned int, float>(param, data);
+            _builder = new GardenBuilder<unsigned int, float>(param, data, 2);
           else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned long int, float>(param, data);
+            _builder = new GardenBuilder<unsigned long int, float>(param, data, 2);
           else
             throw "unsupported depth";
+
+          auto mem_per_rec = _builder->MemoryRequirementsPerRecord();
+          size_t total;
+          size_t free;
+
+          cudaMemGetInfo(&free, &total);
+
+          printf("Total bytes %ld avaliable %ld \n", total, free);
+          printf("Memory usage estimation %ld per record %ld in total \n", mem_per_rec, mem_per_rec * data->rows);
+
+          data->TransferToGPU(free * 4 / 5);
 
           _init = true;
         }

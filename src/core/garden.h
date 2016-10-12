@@ -152,6 +152,7 @@ namespace arboretum {
 
     class GardenBuilderBase {
     public:
+      virtual size_t MemoryRequirementsPerRecord() = 0;
       virtual void InitGrowingTree() = 0;
       virtual void InitTreeLevel(const int level) = 0;
       virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad) = 0;
