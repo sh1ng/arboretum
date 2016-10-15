@@ -111,10 +111,14 @@ namespace arboretum {
       const unsigned int depth;
       const unsigned int offset;
       std::vector<float> leaf_level;
-      const std::vector<int> _node_lookup [2];
+      const std::vector<int> _node_lookup_left;
+      const std::vector<int> _node_lookup_right;
 
-      RegTree(unsigned int depth) : depth(depth), offset((1 << (depth - 1)) - 1),
-        _node_lookup{ RegTree::InitRight(depth), RegTree::InitLeft(depth) }{
+      RegTree(unsigned int depth)
+        : depth(depth), offset((1 << (depth - 1)) - 1)
+        , _node_lookup_left(RegTree::InitLeft(depth))
+        , _node_lookup_right(RegTree::InitRight(depth))
+      {
         unsigned int nodes_num = (1 << depth) - 1;
         nodes.reserve(nodes_num);
 
@@ -125,7 +129,7 @@ namespace arboretum {
       }
 
       inline int ChildNode(const unsigned int parent, const bool isLeft) const {
-        return _node_lookup[isLeft][parent];
+        return isLeft ? _node_lookup_left[parent] : _node_lookup_right[parent];
       }
 
       void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out) const {
