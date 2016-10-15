@@ -2,9 +2,9 @@
 
 ## Dependencies
 * Python 2.7
-* Cuda toolkit 8(there's no cuda 8 sprecifiec features are used so it should also work with cuda 7, but it has never been tested).
-* Cuda thrust - it's a part of cuda toolkit so it should work out of box.
-* Cuda cub https://github.com/NVlabs/cub as submodule. 
+* Cuda toolkit 8 or 7
+* Cuda thrust - it's a part of cuda toolkit so it should work out of box
+* Cuda cub https://github.com/NVlabs/cub as submodule
 
 ## Linux
 * gcc-5
