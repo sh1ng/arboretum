@@ -34,7 +34,8 @@ namespace arboretum {
    };
 
     template <class type1, class type2>
-    __global__ void gather_kernel(const int *position, const type1 *in1, type1 *out1, type2 *in2, type2 *out2, const size_t n){
+    __global__ void gather_kernel(const int* const __restrict__ position, const type1* const __restrict__ in1,
+                                  type1* out1, const type2* const __restrict__ in2, type2 *out2, const size_t n){
       for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
                i < n;
                i += gridDim.x * blockDim.x){
@@ -44,9 +45,9 @@ namespace arboretum {
     }
 
     template <class node_type, class float_type>
-    __global__ void gain_kernel(const float_type *left_sum, const float *fvalues,
-                                const node_type *segments, const cub::TexObjInputIterator<float_type> parent_sum_iter,
-                                const cub::TexObjInputIterator<int> parent_count_iter, const size_t n, const GainFunctionParameters parameters,
+    __global__ void gain_kernel(const float_type* const __restrict__ left_sum, const float* const __restrict__ fvalues,
+                                const node_type* const __restrict__ segments, const float_type* const __restrict__ parent_sum_iter,
+                                const int* const __restrict__ parent_count_iter, const size_t n, const GainFunctionParameters parameters,
                                 float_type *gain){
       for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
                i < n;
@@ -325,14 +326,6 @@ namespace arboretum {
           parent_node_count = parent_node_count_h;
         }
 
-        cub::TexObjInputIterator<float_type> parent_sum_iter;
-        parent_sum_iter.BindTexture(thrust::raw_pointer_cast(parent_node_sum.data()), sizeof(float_type) * (lenght + 1));
-
-        cub::TexObjInputIterator<int> parent_count_iter;
-        parent_count_iter.BindTexture(thrust::raw_pointer_cast(parent_node_count.data()), sizeof(int) * (lenght + 1));
-
-
-
                       for(size_t fid = 0; fid < data->columns; ++fid){
 
                           for(size_t i = 0; i < overlap_depth && (fid + i) < data->columns; ++i){
@@ -447,8 +440,8 @@ namespace arboretum {
                               gain_kernel<<<gridSizeGain, blockSizeGain, 0, s >>>(thrust::raw_pointer_cast(sum[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-                                                                          parent_sum_iter,
-                                                                          parent_count_iter,
+                                                                          thrust::raw_pointer_cast(parent_node_sum.data()),
+                                                                          thrust::raw_pointer_cast(parent_node_count.data()),
                                                                           data->rows,
                                                                           gain_param,
                                                                           thrust::raw_pointer_cast(gain[circular_fid].data()));
