@@ -79,7 +79,7 @@ namespace arboretum {
             mid = lo + (hi-lo)/2;
             if(parent_count_const[mid] <= idx && parent_count_const[mid + 1] > idx && parent_count_const[mid] != parent_count_const[mid + 1])
                return mid;
-            else if(parent_count_const[mid] >= idx)
+            else if(parent_count_const[mid + 1] > idx)
                lo = mid+1;
             else
                hi = mid-1;
