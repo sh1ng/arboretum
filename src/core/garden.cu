@@ -99,7 +99,7 @@ namespace arboretum {
               const float_type top = total_count * left_sum_value - left_count_value * total_sum;
               g = top*top/d;
             }
-          cub::ThreadStore<cub::STORE_WT>(gain + i, g)
+          cub::ThreadStore<cub::STORE_WT>(gain + i, g);
           }
     }
 
