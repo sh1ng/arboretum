@@ -18,6 +18,8 @@
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/util_allocator.cuh>
 
+#define DSIZE 1 << 16
+
 
 namespace arboretum {
   namespace core {
@@ -27,6 +29,9 @@ namespace arboretum {
     using thrust::host_vector;
     using thrust::device_vector;
     using thrust::cuda::experimental::pinned_allocator;
+
+    __constant__ int parent_count_const[DSIZE / (2 * sizeof(int))];
+    __constant__ float parent_sum_const[DSIZE / (2 * sizeof(int))];
 
     union my_atomics{
       float floats[2];                 // floats[0] = maxvalue
@@ -70,22 +75,21 @@ namespace arboretum {
 
     template <class node_type, class float_type>
     __global__ void gain_kernel(const float_type* const __restrict__ left_sum, const float* const __restrict__ fvalues,
-                                const node_type* const __restrict__ segments, const float_type* const __restrict__ parent_sum_iter,
-                                const int* const __restrict__ parent_count_iter, const size_t n, const GainFunctionParameters parameters,
+                                const node_type* const __restrict__ segments, const size_t n, const GainFunctionParameters parameters,
                                 float_type *gain){
       for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
                i < n;
                i += gridDim.x * blockDim.x){
           const node_type segment = segments[i];
 
-          const float_type left_sum_offset = parent_sum_iter[segment];
+          const float_type left_sum_offset = parent_sum_const[segment];
           const float_type left_sum_value = left_sum[i] - left_sum_offset;
 
-          const size_t left_count_offset = parent_count_iter[segment];
+          const size_t left_count_offset = parent_count_const[segment];
           const size_t left_count_value = i - left_count_offset;
 
-          const float_type total_sum = parent_sum_iter[segment + 1] - parent_sum_iter[segment];
-          const size_t total_count = parent_count_iter[segment + 1] - parent_count_iter[segment];
+          const float_type total_sum = parent_sum_const[segment + 1] - parent_sum_const[segment];
+          const size_t total_count = parent_count_const[segment + 1] - parent_count_const[segment];
 
           const float fvalue = fvalues[i + 1];
           const float fvalue_prev = fvalues[i];
@@ -347,6 +351,14 @@ namespace arboretum {
           parent_node_count = parent_node_count_h;
         }
 
+        cudaMemcpyToSymbol(parent_sum_const,
+                                   thrust::raw_pointer_cast(parent_node_sum_h.data()),
+                                   sizeof(float) * (lenght + 1));
+
+        cudaMemcpyToSymbol(parent_count_const,
+                                   thrust::raw_pointer_cast(parent_node_count_h.data()),
+                                   sizeof(int) * (lenght + 1));
+
                       for(size_t fid = 0; fid < data->columns; ++fid){
 
                           for(size_t i = 0; i < overlap_depth && (fid + i) < data->columns; ++i){
@@ -463,8 +475,6 @@ namespace arboretum {
                               gain_kernel<<<gridSizeGain, blockSizeGain, 0, s >>>(thrust::raw_pointer_cast(sum[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-                                                                          thrust::raw_pointer_cast(parent_node_sum.data()),
-                                                                          thrust::raw_pointer_cast(parent_node_count.data()),
                                                                           data->rows,
                                                                           gain_param,
                                                                           thrust::raw_pointer_cast(gain[circular_fid].data()));
