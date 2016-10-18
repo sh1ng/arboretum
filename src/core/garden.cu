@@ -74,12 +74,12 @@ namespace arboretum {
 
     template <class node_type>
     __device__ node_type search(const size_t idx, const node_type size){
-      node_type lo = 0, hi = size;
+      node_type lo = 0, hi = size, mid;
          while(lo <= hi){
-            node_type mid = lo + (hi-lo)/2;
-            if(parent_count_const[mid] <= idx && parent_count_const[mid + 1] > idx)
+            mid = lo + (hi-lo)/2;
+            if(parent_count_const[mid] <= idx && parent_count_const[mid + 1] > idx && parent_count_const[mid] != parent_count_const[mid + 1])
                return mid;
-            else if(parent_count_const[mid] > idx)
+            else if(parent_count_const[mid] > idx || parent_count_const[mid] == parent_count_const[mid + 1])
                lo = mid+1;
             else
                hi = mid-1;
