@@ -351,13 +351,19 @@ namespace arboretum {
           parent_node_count = parent_node_count_h;
         }
 
-        cudaMemcpyToSymbol(parent_sum_const,
-                                   thrust::raw_pointer_cast(parent_node_sum_h.data()),
-                                   sizeof(float) * (lenght + 1));
+        cudaMemcpyToSymbolAsync(parent_sum_const,
+                                thrust::raw_pointer_cast(parent_node_sum.data()),
+                                sizeof(float) * (lenght + 1),
+                                0,
+                                cudaMemcpyDeviceToDevice,
+                                streams[0]);
 
-        cudaMemcpyToSymbol(parent_count_const,
-                                   thrust::raw_pointer_cast(parent_node_count_h.data()),
-                                   sizeof(node_type) * (lenght + 1));
+        cudaMemcpyToSymbolAsync(parent_count_const,
+                           thrust::raw_pointer_cast(parent_node_count.data()),
+                           sizeof(int) * (lenght + 1),
+                           0,
+                           cudaMemcpyDeviceToDevice,
+                           streams[0]);
 
                       for(size_t fid = 0; fid < data->columns; ++fid){
 
