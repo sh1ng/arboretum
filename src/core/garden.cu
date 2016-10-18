@@ -41,22 +41,23 @@ namespace arboretum {
     GainFunctionParameters(const unsigned int min_wieght) : min_wieght(min_wieght) {}
    };
 
-    __device__ unsigned long long int my_atomicMax(unsigned long long int* address, float val1, int val2){
+    __device__ unsigned long long int my_atomicMax(unsigned long long int* address, const float val1, const int val2){
         my_atomics loc, loctest;
         loc.floats[0] = val1;
         loc.ints[1] = val2;
         loctest.ulong = *address;
-        while (loctest.floats[0] <  val1)
+        while (loctest.floats[0] < val1)
           loctest.ulong = atomicCAS(address, loctest.ulong,  loc.ulong);
         return loctest.ulong;
     }
 
     template<class float_type, class node_type>
-    __global__ void my_max_idx(const float_type *data, const node_type *keys, const int ds, my_atomics *res){
+    __global__ void my_max_idx(const float_type* const __restrict__ data, const node_type* const __restrict__ keys, const int ds, my_atomics *res){
 
-        int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
+        const int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
+        const node_type key = cub::ThreadLoad<cub::LOAD_CV>(keys + idx);
         if (idx < ds)
-          my_atomicMax(&(res[keys[idx]].ulong), (float)data[idx], idx);
+          my_atomicMax(&(res[key].ulong), (float)cub::ThreadLoad<cub::LOAD_CV>(data + idx), idx);
     }
 
     template <class type1, class type2>
