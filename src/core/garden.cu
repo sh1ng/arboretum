@@ -93,7 +93,7 @@ namespace arboretum {
           const float fvalue_prev = cub::ThreadLoad<cub::LOAD_CS>(fvalues + i);
           const size_t right_count = total_count - left_count_value;
           const float g = (left_count_value >= parameters.min_wieght && right_count >= parameters.min_wieght && fvalue != fvalue_prev) ?
-                (left_count_value * total_count * (total_count - left_count_value)) * (left_count_value * total_count * (total_count - left_count_value))/total_count * left_sum_value - left_count_value * total_sum :
+                (left_count_value * total_count * (total_count - left_count_value)) * (left_count_value * total_count * (total_count - left_count_value))/(total_count * left_sum_value - left_count_value * total_sum) :
                 0.0;
 
           cub::ThreadStore<cub::STORE_WT>(gain + i, g);
