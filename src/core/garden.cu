@@ -72,14 +72,28 @@ namespace arboretum {
         }
     }
 
+    template <class node_type>
+    __device__ node_type search(const size_t idx, const node_type size){
+      node_type lo = 0, hi = size;
+         while(lo <= hi){
+            node_type mid = lo + (hi-lo)/2;
+            if(parent_count_const[mid] <= idx && parent_count_const[mid + 1] > idx)
+               return mid;
+            else if(parent_count_const[mid] > idx)
+               lo = mid+1;
+            else
+               hi = mid-1;
+           }
+    }
+
     template <class node_type, class float_type>
     __global__ void gain_kernel(const float_type* const __restrict__ left_sum, const float* const __restrict__ fvalues,
-                                const node_type* const __restrict__ segments, const size_t n, const GainFunctionParameters parameters,
+                                const node_type segments, const size_t n, const GainFunctionParameters parameters,
                                 float_type *gain){
       for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
                i < n;
                i += gridDim.x * blockDim.x){
-          const node_type segment = segments[i];
+          const node_type segment = search(i, segments);
 
           const size_t left_count_offset = parent_count_const[segment];
           const size_t left_count_value = i - left_count_offset;
@@ -336,7 +350,7 @@ namespace arboretum {
                         data->rows * sizeof(node_type),
                         cudaMemcpyHostToDevice, streams[0]);
 
-        size_t lenght = 1 << level;
+        const size_t lenght = 1 << level;
 
         {
           parent_node_sum_h[0] = 0.0;
@@ -479,7 +493,7 @@ namespace arboretum {
 
                               gain_kernel<<<gridSizeGain, blockSizeGain, 0, s >>>(thrust::raw_pointer_cast(sum[circular_fid].data()),
                                                                           thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data()),
-                                                                          thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                          lenght,
                                                                           data->rows,
                                                                           gain_param,
                                                                           thrust::raw_pointer_cast(gain[circular_fid].data()));
