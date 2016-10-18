@@ -18,9 +18,6 @@
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/util_allocator.cuh>
 
-#define DSIZE 1 << 16
-
-
 namespace arboretum {
   namespace core {
     using namespace std;
@@ -30,8 +27,8 @@ namespace arboretum {
     using thrust::device_vector;
     using thrust::cuda::experimental::pinned_allocator;
 
-    __constant__ int parent_count_const[DSIZE / (2 * sizeof(int))];
-    __constant__ float parent_sum_const[DSIZE / (2 * sizeof(float))];
+    __constant__ int parent_count_const[1 << 13];
+    __constant__ float parent_sum_const[1 << 13];
 
     union my_atomics{
       float floats[2];                 // floats[0] = maxvalue
