@@ -31,7 +31,7 @@ namespace arboretum {
     using thrust::cuda::experimental::pinned_allocator;
 
     __constant__ int parent_count_const[DSIZE / (2 * sizeof(int))];
-    __constant__ float parent_sum_const[DSIZE / (2 * sizeof(int))];
+    __constant__ float parent_sum_const[DSIZE / (2 * sizeof(float))];
 
     union my_atomics{
       float floats[2];                 // floats[0] = maxvalue
