@@ -27,11 +27,35 @@ namespace arboretum {
     using thrust::host_vector;
     using thrust::device_vector;
     using thrust::cuda::experimental::pinned_allocator;
+
+    union my_atomics{
+      float floats[2];                 // floats[0] = maxvalue
+      int ints[2];                     // ints[1] = maxindex
+      unsigned long long int ulong;    // for atomic update
+    };
     
     struct GainFunctionParameters{
     const unsigned int min_wieght;
     GainFunctionParameters(const unsigned int min_wieght) : min_wieght(min_wieght) {}
    };
+
+    __device__ unsigned long long int my_atomicMax(unsigned long long int* address, float val1, int val2){
+        my_atomics loc, loctest;
+        loc.floats[0] = val1;
+        loc.ints[1] = val2;
+        loctest.ulong = *address;
+        while (loctest.floats[0] <  val1)
+          loctest.ulong = atomicCAS(address, loctest.ulong,  loc.ulong);
+        return loctest.ulong;
+    }
+
+    template<class float_type, class node_type>
+    __global__ void my_max_idx(const float_type *data, const node_type *keys, const int ds, my_atomics *res){
+
+        int idx = (blockDim.x * blockIdx.x) + threadIdx.x;
+        if (idx < ds)
+          my_atomicMax(&(res[keys[idx]].ulong), (float)data[idx], idx);
+    }
 
     template <class type1, class type2>
     __global__ void gather_kernel(const int* const __restrict__ position, const type1* const __restrict__ in1,
@@ -94,6 +118,12 @@ namespace arboretum {
         cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGather, gather_kernel<node_type, float_type>, 0, 0);
         gridSizeGather = (data->rows + blockSizeGather - 1) / blockSizeGather;
 
+        minGridSize = 0;
+
+        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeMax, my_max_idx<float_type, node_type>, 0, 0);
+        gridSizeMax = (data->rows + blockSizeMax - 1) / blockSizeMax;
+
+
         row2Node.resize(data->rows);
         _rowIndex2Node.resize(data->rows, 0);
         _featureNodeSplitStat.resize(data->columns);
@@ -109,8 +139,6 @@ namespace arboretum {
         fvalue = new device_vector<float>[overlap_depth];
         position = new device_vector<int>[overlap_depth];
         grad_sorted = new device_vector<float_type>[overlap_depth];
-        max_d = new device_vector<cub::KeyValuePair<int, float_type> >[overlap_depth];
-        max_h = new host_vector<cub::KeyValuePair<int, float_type>, pinned_allocator<cub::KeyValuePair<int, float_type> > >[overlap_depth];
 
         parent_node_sum.resize(lenght + 1);
         parent_node_count.resize(lenght + 1);
@@ -133,9 +161,9 @@ namespace arboretum {
             position[i] = device_vector<int>(data->rows);
             grad_sorted[i] = device_vector<float_type>(data->rows);
             grad_sorted_sorted[i] = device_vector<float_type>(data->rows);
-            max_d[i] = device_vector< cub::KeyValuePair<int, float_type> >(1 << param.depth);
-            max_h[i] = thrust::host_vector< cub::KeyValuePair<int, float_type>, thrust::cuda::experimental::pinned_allocator<  cub::KeyValuePair<int, float_type> > >(1 << param.depth);
             temp_bytes_allocated[i] = 0;
+            CubDebugExit(cudaMalloc(&(results[i]), sizeof(my_atomics) * lenght));
+            CubDebugExit(cudaMallocHost(&(results_h[i]), sizeof(my_atomics) * lenght));
           }
 
         {
@@ -178,16 +206,6 @@ namespace arboretum {
             max = std::max(max, temp_storage_bytes);
 
             temp_storage_bytes = 0;
-
-            cub::DeviceSegmentedReduce::ArgMax(NULL,
-                           temp_storage_bytes,
-                           thrust::raw_pointer_cast(gain[0].data()),
-                           thrust::raw_pointer_cast(max_d[0].data()),
-                           lenght,
-                           thrust::raw_pointer_cast(parent_node_count.data()),
-                           thrust::raw_pointer_cast(parent_node_count.data() + 1)
-                           );
-
 
             max = std::max(max, temp_storage_bytes);
             for(size_t i = 0; i < overlap_depth; ++i){
@@ -276,8 +294,6 @@ namespace arboretum {
       device_vector<float_type> *grad_sorted = new device_vector<float_type>[overlap_depth];
       device_vector<float_type> *grad_sorted_sorted = new device_vector<float_type>[overlap_depth];
       cudaStream_t *streams = new cudaStream_t[overlap_depth];
-      device_vector<cub::KeyValuePair<int, float_type> > *max_d;
-      host_vector<cub::KeyValuePair<int, float_type>, pinned_allocator<cub::KeyValuePair<int, float_type> > > *max_h;
       device_vector<float_type> grad_d;
       device_vector<node_type> row2Node; 
       device_vector<float_type> parent_node_sum;
@@ -286,6 +302,8 @@ namespace arboretum {
       host_vector<int> parent_node_count_h;
       size_t* temp_bytes_allocated = new size_t[overlap_depth];
       void** temp_bytes = new void*[overlap_depth];
+      my_atomics** results = new my_atomics*[overlap_depth];
+      my_atomics** results_h = new my_atomics*[overlap_depth];
 
 
       int blockSizeGain;
@@ -293,6 +311,9 @@ namespace arboretum {
 
       int blockSizeGather;
       int gridSizeGather;
+
+      int blockSizeMax;
+      int gridSizeMax;
 
       inline void AllocateMemoryIfRequire(const size_t circular_fid, const size_t bytes){
         if(temp_bytes_allocated[circular_fid] == 0){
@@ -340,6 +361,8 @@ namespace arboretum {
                               cudaStream_t s = streams[circular_fid];
 
                               device_vector<float>* fvalue_tmp = NULL;
+
+                              cudaMemsetAsync(results[circular_fid], 0, lenght*sizeof(my_atomics), s);
 
                               if(data->sorted_data_device[active_fid].size() > 0){
                                   fvalue_tmp = const_cast<device_vector<float>*>(&(data->sorted_data_device[active_fid]));
@@ -446,27 +469,14 @@ namespace arboretum {
                                                                           gain_param,
                                                                           thrust::raw_pointer_cast(gain[circular_fid].data()));
 
-                              cub::DeviceSegmentedReduce::ArgMax(NULL,
-                                             temp_storage_bytes,
-                                             thrust::raw_pointer_cast(gain[circular_fid].data()),
-                                             thrust::raw_pointer_cast(max_d[circular_fid].data()),
-                                             lenght,
-                                             thrust::raw_pointer_cast(parent_node_count.data()),
-                                             thrust::raw_pointer_cast(parent_node_count.data() + 1),
-                                             s);
+                              my_max_idx<<<gridSizeMax, blockSizeMax, 0, s>>>(thrust::raw_pointer_cast(gain[circular_fid].data()),
+                                                                        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+                                                                        data->rows,
+                                                                        results[circular_fid]);
 
-                              cub::DeviceSegmentedReduce::ArgMax(temp_bytes[circular_fid],
-                                             temp_storage_bytes,
-                                             thrust::raw_pointer_cast(gain[circular_fid].data()),
-                                             thrust::raw_pointer_cast(max_d[circular_fid].data()),
-                                             lenght,
-                                             thrust::raw_pointer_cast(parent_node_count.data()),
-                                             thrust::raw_pointer_cast(parent_node_count.data() + 1),
-                                             s);
-
-                              cudaMemcpyAsync(thrust::raw_pointer_cast(max_h[circular_fid].data()),
-                                              thrust::raw_pointer_cast(max_d[circular_fid].data()),
-                                              lenght * sizeof(cub::KeyValuePair<int, float_type>),
+                              cudaMemcpyAsync(results_h[circular_fid],
+                                              results[circular_fid],
+                                              lenght * sizeof(my_atomics),
                                               cudaMemcpyDeviceToHost, s);
                             }
 
@@ -479,14 +489,14 @@ namespace arboretum {
                           for(size_t i = 0; i < lenght;  ++i){
                               if(_nodeStat[i].count <= 0) continue;
 
-                              if(max_h[circular_fid][i].value > _bestSplit[i].gain){
-                                const int index_value = max_h[circular_fid][i].key + parent_node_count_h[i];
+                              if(results_h[circular_fid][i].floats[0] > _bestSplit[i].gain){
+                                const int index_value = results_h[circular_fid][i].ints[1];
                                 const float fvalue_prev_val = fvalue_sorted[circular_fid][index_value];
                                 const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
-                                const size_t count_val = max_h[circular_fid][i].key;
+                                const size_t count_val = results_h[circular_fid][i].ints[1] - parent_node_count_h[i];
                                 const float_type sum_val = sum[circular_fid][index_value] - parent_node_sum_h[i];
                                 _bestSplit[i].fid = fid;
-                                _bestSplit[i].gain = max_h[circular_fid][i].value;
+                                _bestSplit[i].gain = results_h[circular_fid][i].floats[0];
                                 _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
                                 _bestSplit[i].count = count_val;
                                 _bestSplit[i].sum_grad = sum_val;
@@ -603,7 +613,9 @@ namespace arboretum {
 
           data->Init(param.initial_y, gradFunc);
 
-          if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
+          if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
+            _builder = new GardenBuilder<unsigned char, float>(param, data, 2);
+          else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
             _builder = new GardenBuilder<unsigned short, float>(param, data, 2);
           else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
             _builder = new GardenBuilder<unsigned int, float>(param, data, 2);
