@@ -647,7 +647,7 @@ namespace arboretum {
           printf("Total bytes %ld avaliable %ld \n", total, free);
           printf("Memory usage estimation %ld per record %ld in total \n", mem_per_rec, mem_per_rec * data->rows);
 
-          data->TransferToGPU(free * 4 / 5);
+          data->TransferToGPU(free * 9 / 10);
 
           _init = true;
         }
