@@ -357,7 +357,7 @@ namespace arboretum {
 
         cudaMemcpyToSymbol(parent_count_const,
                                    thrust::raw_pointer_cast(parent_node_count_h.data()),
-                                   sizeof(int) * (lenght + 1));
+                                   sizeof(node_type) * (lenght + 1));
 
                       for(size_t fid = 0; fid < data->columns; ++fid){
 
