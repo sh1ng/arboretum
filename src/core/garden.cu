@@ -80,26 +80,26 @@ namespace arboretum {
                i += gridDim.x * blockDim.x){
           const node_type segment = segments[i];
 
-          const float_type left_sum_offset = parent_sum_const[segment];
-          const float_type left_sum_value = cub::ThreadLoad<cub::LOAD_CV>(left_sum + i) - left_sum_offset;
-
           const size_t left_count_offset = parent_count_const[segment];
           const size_t left_count_value = i - left_count_offset;
 
-          const float_type total_sum = parent_sum_const[segment + 1] - parent_sum_const[segment];
           const size_t total_count = parent_count_const[segment + 1] - parent_count_const[segment];
 
           const float fvalue = cub::ThreadLoad<cub::LOAD_CS>(fvalues + i + 1);
           const float fvalue_prev = cub::ThreadLoad<cub::LOAD_CS>(fvalues + i);
           const size_t right_count = total_count - left_count_value;
+          float g = 0.0;
 
-          const size_t d = left_count_value * total_count * (total_count - left_count_value);
-          const float_type top = total_count * left_sum_value - left_count_value * total_sum;
+          if(left_count_value >= parameters.min_wieght && right_count >= parameters.min_wieght && fvalue != fvalue_prev){
+              const float_type left_sum_offset = parent_sum_const[segment];
+              const float_type left_sum_value = cub::ThreadLoad<cub::LOAD_CV>(left_sum + i) - left_sum_offset;
+              const float_type total_sum = parent_sum_const[segment + 1] - parent_sum_const[segment];
 
-          const float_type lookup_table[] = { 0.0, top*top/d};
-
-          cub::ThreadStore<cub::STORE_WT>(gain + i,
-                                          lookup_table[left_count_value >= parameters.min_wieght && right_count >= parameters.min_wieght && fvalue != fvalue_prev]);
+              const size_t d = left_count_value * total_count * (total_count - left_count_value);
+              const float_type top = total_count * left_sum_value - left_count_value * total_sum;
+              g = top*top/d;
+            }
+          cub::ThreadStore<cub::STORE_WT>(gain + i, g)
           }
     }
 
