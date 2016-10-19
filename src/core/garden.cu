@@ -73,7 +73,7 @@ namespace arboretum {
     }
 
     template <class node_type>
-    __device__ inline node_type search(const size_t idx, const node_type size){
+    __device__ __forceinline__ node_type search(const size_t idx, const node_type size){
       node_type lo = 0, hi = size, mid;
          while(lo <= hi){
             mid = lo + (hi-lo)/2;
