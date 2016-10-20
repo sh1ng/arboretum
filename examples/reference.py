@@ -36,7 +36,7 @@ config = json.dumps({'objective':0, 'verbose':
 
 # init model
 #model = arboretum.Garden('reg:linear', data, 6, 2, 1, 0.5)
-model = arboretum.Garden(data, config)
+model = arboretum.Garden(config, data)
 
 # grow trees
 for i in xrange(5):

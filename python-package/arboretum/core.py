@@ -9,6 +9,9 @@ import ctypes
 import numpy as np
 import scipy.sparse
 
+class ArboretumError(Exception):
+    pass
+
 def _load_lib():
     curr_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
     lib_path = os.path.join(curr_path, 'arboretum_wrapper.so')
@@ -68,7 +71,7 @@ class Garden(object):
         'reg:linear': 0,
         'reg:logistic': 1
     }
-    def __init__(self, data, config):
+    def __init__(self, config, data):
         self.data = data
         self._config = config
         self._init = False
