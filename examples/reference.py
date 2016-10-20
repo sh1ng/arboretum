@@ -2,6 +2,7 @@ import arboretum
 import numpy as np
 from sklearn.datasets import load_boston
 import xgboost
+import json
 
 
 def rmse(y, y_hat):
@@ -16,8 +17,26 @@ n = 10000
 data = arboretum.DMatrix(boston.data[0:n], y=boston.target[0:n])
 y = boston.target[0:n]
 
+config = json.dumps({'objective':0, 'verbose':
+{
+'gpu': True
+},
+'tree':
+{
+'eta': 0.5,
+'max_depth': 6,
+'gamma': 0.0,
+'min_child_weight': 2,
+'min_leaf_size': 2,
+'colsample_bytree': 1.0,
+'colsample_bylevel': 1.0,
+'lambda': 1.0,
+'alpha': 0.0
+}})
+
 # init model
-model = arboretum.Garden('reg:linear', data, 6, 2, 1, 0.5)
+#model = arboretum.Garden('reg:linear', data, 6, 2, 1, 0.5)
+model = arboretum.Garden(data, config)
 
 # grow trees
 for i in xrange(5):

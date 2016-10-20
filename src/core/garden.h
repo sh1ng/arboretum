@@ -165,8 +165,10 @@ namespace arboretum {
 
     class Garden {
     public:
-      Garden(const TreeParam& param);
+      Garden(const TreeParam& param, const Verbose& verbose, const InternalConfiguration& cfg);
       const TreeParam param;
+      const Verbose verbose;
+      const InternalConfiguration cfg;
       void GrowTree(io::DataMatrix* data, float* grad);
       void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out);
     private:

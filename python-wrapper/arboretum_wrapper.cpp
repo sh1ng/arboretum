@@ -12,6 +12,7 @@ using namespace arboretum::core;
 
 namespace arboretum {
   namespace wrapper {
+
     extern "C" const char* ACreateFromDanseMatrix(const float *data,
                                           int nrow,
                                           int ncol,
@@ -45,16 +46,15 @@ namespace arboretum {
       }
     }
 
-    extern "C" const char* AInitGarden(int obj,
-                                       int depth,
-                                       int min_child_weight,
-                                       float colsample_bytree,
-                                       float eta,
+    extern "C" const char* AInitGarden(const char* configuration,
                                        VoidPointer *out){
 
       try{
-        TreeParam *param = new TreeParam((Objective)obj, depth, min_child_weight, colsample_bytree, eta);
-        Garden* source = new Garden(*param);
+        nlohmann::json cfg = json::parse(configuration);
+        const TreeParam param = TreeParam::Parse(cfg);
+        const Verbose verbose = Verbose::Parse(cfg);
+        const InternalConfiguration c = InternalConfiguration::Parse(cfg);
+        Garden* source = new Garden(param, verbose, c);
         *out = static_cast<VoidPointer>(source);
         return NULL;
       } catch(const char* error){

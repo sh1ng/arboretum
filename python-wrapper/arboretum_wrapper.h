@@ -14,11 +14,7 @@ extern "C" const char* ASetY(VoidPointer data,
                       const float *y);
 
 
-extern "C" const char* AInitGarden(int obj,
-                                   int depth,
-                                   int min_child_weight,
-                                   float colsample_bytree,
-                                   float eta,
+extern "C" const char* AInitGarden(const char* configuration,
                                    VoidPointer *garden);
 
 extern "C" const char* AGrowTree(VoidPointer garden,

@@ -27,7 +27,7 @@ namespace arboretum {
       size_t columns;
       void Init(const float initial_y, std::function<float(const float, const float)> func);
       void UpdateGrad();
-      void TransferToGPU(const size_t free);
+      void TransferToGPU(const size_t free, bool verbose);
       DataMatrix(int rows, int columns);
     private:
       std::function<float(const float, const float)> _gradFunc;

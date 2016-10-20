@@ -35,8 +35,8 @@ namespace arboretum {
     };
     
     struct GainFunctionParameters{
-    const unsigned int min_wieght;
-    GainFunctionParameters(const unsigned int min_wieght) : min_wieght(min_wieght) {}
+    const unsigned int min_leaf_size;
+    GainFunctionParameters(const unsigned int min_leaf_size) : min_leaf_size(min_leaf_size) {}
    };
 
     __device__ unsigned long long int my_atomicMax(unsigned long long int* address, float val1, int val2){
@@ -91,7 +91,7 @@ namespace arboretum {
           const float fvalue_prev = fvalues[i];
           const size_t right_count = total_count - left_count_value;
 
-          if(left_count_value >= parameters.min_wieght && right_count >= parameters.min_wieght && fvalue != fvalue_prev){
+          if(left_count_value >= parameters.min_leaf_size && right_count >= parameters.min_leaf_size && fvalue != fvalue_prev){
               const size_t d = left_count_value * total_count * (total_count - left_count_value);
               const float_type top = total_count * left_sum_value - left_count_value * total_sum;
               gain[i] = top*top/d;
@@ -105,7 +105,7 @@ namespace arboretum {
     class GardenBuilder : public GardenBuilderBase {
     public:
       GardenBuilder(const TreeParam &param, const io::DataMatrix* data, const unsigned short overlap) : overlap_depth(overlap),
-        param(param), gain_param(param.min_child_weight){
+        param(param), gain_param(param.min_leaf_size){
 
         const int lenght = 1 << param.depth;
 
@@ -595,7 +595,11 @@ namespace arboretum {
       }
     };
 
-    Garden::Garden(const TreeParam& param) : param(param), _init(false) {}
+    Garden::Garden(const TreeParam& param, const Verbose& verbose, const InternalConfiguration& cfg) :
+      param(param),
+      verbose(verbose),
+      cfg(cfg),
+      _init(false) {}
     void Garden::GrowTree(io::DataMatrix* data, float *grad){
 
       if(!_init){
@@ -614,13 +618,13 @@ namespace arboretum {
           data->Init(param.initial_y, gradFunc);
 
           if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned char, float>(param, data, 2);
+            _builder = new GardenBuilder<unsigned char, float>(param, data, cfg.overlap);
           else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned short, float>(param, data, 2);
+            _builder = new GardenBuilder<unsigned short, float>(param, data, cfg.overlap);
           else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned int, float>(param, data, 2);
+            _builder = new GardenBuilder<unsigned int, float>(param, data, cfg.overlap);
           else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned long int, float>(param, data, 2);
+            _builder = new GardenBuilder<unsigned long int, float>(param, data, cfg.overlap);
           else
             throw "unsupported depth";
 
@@ -630,10 +634,12 @@ namespace arboretum {
 
           cudaMemGetInfo(&free, &total);
 
-          printf("Total bytes %ld avaliable %ld \n", total, free);
-          printf("Memory usage estimation %ld per record %ld in total \n", mem_per_rec, mem_per_rec * data->rows);
+          if(verbose.gpu){
+              printf("Total bytes %ld avaliable %ld \n", total, free);
+              printf("Memory usage estimation %ld per record %ld in total \n", mem_per_rec, mem_per_rec * data->rows);
+            }
 
-          data->TransferToGPU(free * 4 / 5);
+          data->TransferToGPU(free * 4 / 5, verbose.gpu);
 
           _init = true;
         }

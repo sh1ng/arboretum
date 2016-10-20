@@ -9,10 +9,6 @@ import ctypes
 import numpy as np
 import scipy.sparse
 
-class ArboretumError(Exception):
-    pass
-
-
 def _load_lib():
     curr_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
     lib_path = os.path.join(curr_path, 'arboretum_wrapper.so')
@@ -29,16 +25,6 @@ def _load_lib():
 _LIB = _load_lib()
 
 def _call_and_throw_if_error(ret):
-    """Check the return value of C API call
-
-    This function will raise exception when error occurs.
-    Wrap every API call with this function
-
-    Parameters
-    ----------
-    ret : int
-        return value from API calls
-    """
     if ret is not None:
         raise ArboretumError(ValueError(ret))
 
@@ -58,9 +44,6 @@ class DMatrix(object):
         _call_and_throw_if_error(_LIB.AFreeDMatrix(self.handle))
 
     def _init_from_npy2d(self, mat, missing):
-        """
-        Initialize data from a 2-D numpy matrix.
-        """
         if len(mat.shape) != 2:
             raise ValueError('Input numpy.ndarray must be 2 dimensional')
 
@@ -85,15 +68,11 @@ class Garden(object):
         'reg:linear': 0,
         'reg:logistic': 1
     }
-    def __init__(self, objective, data, depth, min_child_weight, colsample_bytree, eta):
-        self.objective = objective
-        self.depth = depth
-        self.min_child_weight = min_child_weight
-        self.colsample_bytree = colsample_bytree
+    def __init__(self, data, config):
         self.data = data
-        self.initial = 0.5
-        self.eta = eta
+        self._config = config
         self._init = False
+
 
 
     def __del__(self):
@@ -109,11 +88,7 @@ class Garden(object):
         if not self._init:
             self.handle = ctypes.c_void_p()
 
-            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_int(Garden._objectives[self.objective]),
-                                                      ctypes.c_int(self.depth),
-                                                      ctypes.c_int(self.min_child_weight),
-                                                      ctypes.c_float(self.colsample_bytree),
-                                                      ctypes.c_float(self.eta),
+            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self._config),
                                                       ctypes.byref(self.handle)))
             self._init = True
 

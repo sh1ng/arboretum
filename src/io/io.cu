@@ -65,14 +65,15 @@ namespace arboretum {
           grad[i] = _gradFunc(y[i], y_hat[i]);
         }
     }
-    void DataMatrix::TransferToGPU(const size_t free){
+    void DataMatrix::TransferToGPU(const size_t free, bool verbose){
       size_t index_size = sizeof(int) * rows;
       size_t data_size = sizeof(float) * rows;
       size_t copy_count = std::min(free / index_size, columns);
       for(size_t i = 0; i < copy_count; ++i){
           index_device[i] = index[i];
         }
-      printf("copied index data %ld from %ld \n", copy_count, columns);
+      if(verbose)
+        printf("copied index data %ld from %ld \n", copy_count, columns);
 
       copy_count = std::min((free - copy_count * sizeof(int) * rows)/data_size, columns);
       for(size_t i = 0; i < copy_count; ++i){
@@ -80,7 +81,8 @@ namespace arboretum {
           sorted_data_device[i][0] = -std::numeric_limits<float>::infinity();
           thrust::copy(sorted_data[i].begin(), sorted_data[i].end(), sorted_data_device[i].begin() + 1);
         }
-      printf("copied features data %ld from %ld \n", copy_count, columns);
+      if(verbose)
+        printf("copied features data %ld from %ld \n", copy_count, columns);
     }
   }
 }
