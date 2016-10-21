@@ -12,7 +12,7 @@
 ## MacOS
 * clang-omp++ can be install by brew
 
-## Installation process is similar to xgboost
+## Installation process
 * git clone --recursive https://github.com/sh1ng/arboretum.git
 * $ make 
 * $ cd python-wrapper
