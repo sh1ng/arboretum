@@ -1,5 +1,7 @@
 #define CUB_STDERR
 
+#include "cuda_runtime.h"
+#include <math.h>
 #include <climits>
 #include <stdio.h>
 #include <limits>
@@ -17,6 +19,7 @@
 #include <cub/cub.cuh>
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/util_allocator.cuh>
+#include "cuda_helpers.h"
 
 
 namespace arboretum {
@@ -68,9 +71,47 @@ namespace arboretum {
         }
     }
 
-    template <class node_type, class float_type>
-    __global__ void gain_kernel(const float_type* const __restrict__ left_sum, const float* const __restrict__ fvalues,
-                                const node_type* const __restrict__ segments, const float_type* const __restrict__ parent_sum_iter,
+    __host__ __device__  float gain_func(size_t count,
+                               float left_sum){
+      return left_sum*left_sum/count;
+    }
+
+    __host__ __device__ float gain_func(size_t count,
+                               float2 left_sum){
+      return left_sum.x*left_sum.x/left_sum.y;
+    }
+
+    __device__ float gain_split(size_t left_count,
+                                        size_t total_count,
+                                        float left_sum,
+                                        float total_sum){
+      const size_t d = left_count * total_count * (total_count - left_count);
+      const float top = total_count * left_sum - left_count * total_sum;
+      return top*top/d;
+    }
+
+//    __device__ __forceinline double gain_func(size_t left_count,
+//                                        size_t total_count,
+//                                        double left_sum,
+//                                        double total_sum){
+//      const size_t d = left_count * total_count * (total_count - left_count);
+//      const double top = total_count * left_sum - left_count * total_sum;
+//      return top*top/d;
+//    }
+
+
+    __device__ float gain_split(size_t left_count,
+                                        size_t total_count,
+                                        float2 left_sum,
+                                        float2 total_sum){
+      const float d = left_sum.y * total_sum.y * (total_sum.y - left_sum.y);
+      const float top = total_sum.y * left_sum.x - left_sum.y * total_sum.x;
+      return top*top/d;
+    }
+
+    template <class node_type, class float_type, typename grad_type>
+    __global__ void gain_kernel(const grad_type* const __restrict__ left_sum, const float* const __restrict__ fvalues,
+                                const node_type* const __restrict__ segments, const grad_type* const __restrict__ parent_sum_iter,
                                 const int* const __restrict__ parent_count_iter, const size_t n, const GainFunctionParameters parameters,
                                 float_type *gain){
       for (size_t i = blockDim.x * blockIdx.x + threadIdx.x;
@@ -78,13 +119,13 @@ namespace arboretum {
                i += gridDim.x * blockDim.x){
           const node_type segment = segments[i];
 
-          const float_type left_sum_offset = parent_sum_iter[segment];
-          const float_type left_sum_value = left_sum[i] - left_sum_offset;
+          const grad_type left_sum_offset = parent_sum_iter[segment];
+          const grad_type left_sum_value = left_sum[i] - left_sum_offset;
 
           const size_t left_count_offset = parent_count_iter[segment];
           const size_t left_count_value = i - left_count_offset;
 
-          const float_type total_sum = parent_sum_iter[segment + 1] - parent_sum_iter[segment];
+          const grad_type total_sum = parent_sum_iter[segment + 1] - parent_sum_iter[segment];
           const size_t total_count = parent_count_iter[segment + 1] - parent_count_iter[segment];
 
           const float fvalue = fvalues[i + 1];
@@ -92,25 +133,29 @@ namespace arboretum {
           const size_t right_count = total_count - left_count_value;
 
           if(left_count_value >= parameters.min_leaf_size && right_count >= parameters.min_leaf_size && fvalue != fvalue_prev){
-              const size_t d = left_count_value * total_count * (total_count - left_count_value);
-              const float_type top = total_count * left_sum_value - left_count_value * total_sum;
-              gain[i] = top*top/d;
+              gain[i] = gain_split(left_count_value, total_count, left_sum_value, total_sum);
             } else {
               gain[i] = 0.0;
             }
           }
     }
 
-    template <typename node_type, typename float_type>
-    class GardenBuilder : public GardenBuilderBase {
+    template <typename node_type, typename float_type, typename grad_type>
+    class TaylorApproximationBuilder : public GardenBuilderBase {
     public:
-      GardenBuilder(const TreeParam &param, const io::DataMatrix* data, const unsigned short overlap) : overlap_depth(overlap),
-        param(param), gain_param(param.min_leaf_size){
+      TaylorApproximationBuilder(const TreeParam &param,
+                                 const io::DataMatrix* data,
+                                 const unsigned short overlap,
+                                 const ApproximatedObjective<grad_type>* objective) :
+        overlap_depth(overlap),
+        param(param),
+        gain_param(param.min_leaf_size),
+        objective(objective){
 
         const int lenght = 1 << param.depth;
 
         int minGridSize; 
-        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGain, gain_kernel<node_type, float_type>, 0, 0);
+        cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSizeGain, gain_kernel<node_type, float_type, grad_type>, 0, 0);
         gridSizeGain = (data->rows + blockSizeGain - 1) / blockSizeGain;
 
         minGridSize = 0;
@@ -126,19 +171,16 @@ namespace arboretum {
 
         row2Node.resize(data->rows);
         _rowIndex2Node.resize(data->rows, 0);
-        _featureNodeSplitStat.resize(data->columns);
         _bestSplit.resize(1 << (param.depth - 2));
         _nodeStat.resize(1 << (param.depth - 2));
-        for(size_t fid = 0; fid < data->columns; ++fid){
-            _featureNodeSplitStat[fid].resize(1 << param.depth);
-          }
+
         gain = new device_vector<float_type>[overlap_depth];
-        sum = new device_vector<float_type>[overlap_depth];
+        sum = new device_vector<grad_type>[overlap_depth];
         segments = new device_vector<node_type>[overlap_depth];
         segments_sorted = new device_vector<node_type>[overlap_depth];
         fvalue = new device_vector<float>[overlap_depth];
         position = new device_vector<int>[overlap_depth];
-        grad_sorted = new device_vector<float_type>[overlap_depth];
+        grad_sorted = new device_vector<grad_type>[overlap_depth];
 
         parent_node_sum.resize(lenght + 1);
         parent_node_count.resize(lenght + 1);
@@ -151,7 +193,7 @@ namespace arboretum {
             cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
             streams[i] = s;
             gain[i]  = device_vector<float_type>(data->rows);
-            sum[i]   = device_vector<float_type>(data->rows);
+            sum[i]   = device_vector<grad_type>(data->rows);
             segments[i] = device_vector<node_type>(data->rows);
             segments_sorted[i] = device_vector<node_type>(data->rows);
             fvalue[i] = device_vector<float>(data->rows + 1);
@@ -159,8 +201,8 @@ namespace arboretum {
             fvalue_sorted[i] = device_vector<float>(data->rows + 1);
             fvalue_sorted[i][0] = -std::numeric_limits<float>::infinity();
             position[i] = device_vector<int>(data->rows);
-            grad_sorted[i] = device_vector<float_type>(data->rows);
-            grad_sorted_sorted[i] = device_vector<float_type>(data->rows);
+            grad_sorted[i] = device_vector<grad_type>(data->rows);
+            grad_sorted_sorted[i] = device_vector<grad_type>(data->rows);
             temp_bytes_allocated[i] = 0;
             CubDebugExit(cudaMalloc(&(results[i]), sizeof(my_atomics) * lenght));
             CubDebugExit(cudaMallocHost(&(results_h[i]), sizeof(my_atomics) * lenght));
@@ -232,11 +274,6 @@ namespace arboretum {
 
       virtual void InitGrowingTree() override {
         std::fill(_rowIndex2Node.begin(), _rowIndex2Node.end(), 0);
-        for(size_t i = 0; i < _featureNodeSplitStat.size(); ++i){
-            for(size_t j = 0; j < _featureNodeSplitStat[i].size(); ++j){
-                _featureNodeSplitStat[i][j].Clean();
-              }
-          }
         for(size_t i = 0; i < _nodeStat.size(); ++i){
             _nodeStat[i].Clean();
           }
@@ -246,22 +283,16 @@ namespace arboretum {
       }
 
       virtual void InitTreeLevel(const int level) override {
-        #pragma omp parallel for
-        for(size_t i = 0; i < _featureNodeSplitStat.size(); ++i){
-            for(size_t j = 0; j < _featureNodeSplitStat[i].size(); ++j){
-                _featureNodeSplitStat[i][j].Clean();
-              }
-          }
       }
 
-      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad) override{
+      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data) override{
         InitGrowingTree();
-        grad_d = data->grad;
+        grad_d = objective->grad;
 
         for(int i = 0; i < param.depth - 1; ++i){
           InitTreeLevel(i);
           UpdateNodeStat(i, data, tree);
-          FindBestSplits(i, data, grad);
+          FindBestSplits(i, data);
           UpdateTree(i, tree);
           UpdateNodeIndex(i, data, tree);
         }
@@ -277,28 +308,27 @@ namespace arboretum {
       const unsigned short overlap_depth;
       const TreeParam param;
       const GainFunctionParameters gain_param;
+      const ApproximatedObjective<grad_type>* objective;
       host_vector<node_type, thrust::cuda::experimental::pinned_allocator< node_type > > _rowIndex2Node;
-      std::vector<std::vector<SplitStat> > _featureNodeSplitStat;
-      std::vector<NodeStat> _nodeStat;
-      std::vector<Split> _bestSplit;
+      std::vector<NodeStat<grad_type>> _nodeStat;
+      std::vector<Split<grad_type>> _bestSplit;
 
 
       device_vector<float_type> *gain = new device_vector<float_type>[overlap_depth];
-      device_vector<float_type> *sum = new device_vector<float_type>[overlap_depth];
-      device_vector<size_t> *count = new device_vector<size_t>[overlap_depth];
+      device_vector<grad_type> *sum = new device_vector<grad_type>[overlap_depth];
       device_vector<node_type> *segments = new device_vector<node_type>[overlap_depth];
       device_vector<node_type> *segments_sorted = new device_vector<node_type>[overlap_depth];
       device_vector<float> *fvalue = new device_vector<float>[overlap_depth];
       device_vector<float> *fvalue_sorted = new device_vector<float>[overlap_depth];
       device_vector<int> *position = new device_vector<int>[overlap_depth];
-      device_vector<float_type> *grad_sorted = new device_vector<float_type>[overlap_depth];
-      device_vector<float_type> *grad_sorted_sorted = new device_vector<float_type>[overlap_depth];
+      device_vector<grad_type> *grad_sorted = new device_vector<grad_type>[overlap_depth];
+      device_vector<grad_type> *grad_sorted_sorted = new device_vector<grad_type>[overlap_depth];
       cudaStream_t *streams = new cudaStream_t[overlap_depth];
-      device_vector<float_type> grad_d;
+      device_vector<grad_type> grad_d;
       device_vector<node_type> row2Node; 
-      device_vector<float_type> parent_node_sum;
+      device_vector<grad_type> parent_node_sum;
       device_vector<int> parent_node_count;
-      host_vector<float_type> parent_node_sum_h;
+      host_vector<grad_type> parent_node_sum_h;
       host_vector<int> parent_node_count_h;
       size_t* temp_bytes_allocated = new size_t[overlap_depth];
       void** temp_bytes = new void*[overlap_depth];
@@ -326,7 +356,8 @@ namespace arboretum {
           }
       }
 
-      void FindBestSplits(const int level, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad){
+      void FindBestSplits(const int level,
+                          const io::DataMatrix *data){
 
         cudaMemcpyAsync(thrust::raw_pointer_cast((row2Node.data())),
                         thrust::raw_pointer_cast(_rowIndex2Node.data()),
@@ -336,7 +367,7 @@ namespace arboretum {
         size_t lenght = 1 << level;
 
         {
-          parent_node_sum_h[0] = 0.0;
+          init(parent_node_sum_h[0]);
           parent_node_count_h[0] = 0;
 
           for(size_t i = 0; i < lenght; ++i){
@@ -494,7 +525,8 @@ namespace arboretum {
                                 const float fvalue_prev_val = fvalue_sorted[circular_fid][index_value];
                                 const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
                                 const size_t count_val = results_h[circular_fid][i].ints[1] - parent_node_count_h[i];
-                                const float_type sum_val = sum[circular_fid][index_value] - parent_node_sum_h[i];
+                                const grad_type s = sum[circular_fid][index_value];
+                                const grad_type sum_val = s - parent_node_sum_h[i];
                                 _bestSplit[i].fid = fid;
                                 _bestSplit[i].gain = results_h[circular_fid][i].floats[0];
                                 _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
@@ -505,8 +537,8 @@ namespace arboretum {
                         }
 
                       for(size_t i = 0; i < lenght; ++i){
-                          NodeStat &node_stat = _nodeStat[i];
-                          Split &split = _bestSplit[i];
+                          NodeStat<grad_type> &node_stat = _nodeStat[i];
+                          Split<grad_type> &split = _bestSplit[i];
 
                           if(split.fid < 0){
                               _bestSplit[i].gain = 0.0;
@@ -521,7 +553,7 @@ namespace arboretum {
         if(level != 0){
         const unsigned int offset = Node::HeapOffset(level);
         const unsigned int offset_next = Node::HeapOffset(level + 1);
-        std::vector<NodeStat> tmp(_nodeStat.size());
+        std::vector<NodeStat<grad_type>> tmp(_nodeStat.size());
         std::copy(_nodeStat.begin(), _nodeStat.end(), tmp.begin());
 
         size_t len = 1 << (level - 1);
@@ -539,11 +571,22 @@ namespace arboretum {
           }
           } else {
             _nodeStat[0].count = data->rows;
-            double sum = 0.0;
-            #pragma omp parallel for default(shared) reduction(+:sum)
-            for(size_t i = 0; i < data->rows; ++i){
-                sum += data->grad[i];
+            grad_type sum;
+            init(sum);
+
+            #pragma omp parallel
+            {
+              grad_type sum_thread;
+              init(sum_thread);
+              #pragma omp for nowait
+              for(size_t i = 0; i < data->rows; ++i){
+                  sum_thread += objective->grad[i];
+                }
+              #pragma omp critical
+              {
+                 sum += sum_thread;
               }
+            }
             _nodeStat[0].sum_grad = sum;
           }
 
@@ -551,7 +594,7 @@ namespace arboretum {
 
         #pragma omp parallel for
         for(size_t i = 0; i < len; ++i){
-            _nodeStat[i].gain = (_nodeStat[i].sum_grad * _nodeStat[i].sum_grad) / _nodeStat[i].count;
+            _nodeStat[i].gain = gain_func(_nodeStat[i].count, _nodeStat[i].sum_grad);
             _bestSplit[i].Clean();
           }
       }
@@ -563,7 +606,7 @@ namespace arboretum {
 
         #pragma omp parallel for
         for(size_t i = 0; i < len; ++i){
-            const Split &best = _bestSplit[i];
+            const Split<grad_type> &best = _bestSplit[i];
             tree->nodes[i + offset].threshold = best.split_value;
             tree->nodes[i + offset].fid = best.fid;
             if(tree->nodes[i + offset].fid < 0){
@@ -578,7 +621,7 @@ namespace arboretum {
         #pragma omp parallel for
         for(size_t i = 0; i < data->rows; ++i){
             const unsigned int node = _rowIndex2Node[i];
-            Split &best = _bestSplit[node];
+            auto &best = _bestSplit[node];
             _rowIndex2Node[i] = tree->ChildNode(node + offset, data->data[best.fid][i] <= best.split_value) - offset_next;
           }
       }
@@ -587,10 +630,10 @@ namespace arboretum {
         const unsigned int offset_1 = Node::HeapOffset(tree->depth - 2);
         const unsigned int offset = Node::HeapOffset(tree->depth - 1);
         for(unsigned int i = 0, len = (1 << (tree->depth - 2)); i < len; ++i){
-            const Split &best = _bestSplit[i];
-            const NodeStat &stat = _nodeStat[i];
-            tree->leaf_level[tree->ChildNode(i + offset_1, true) - offset] = (best.sum_grad / best.count) * param.eta * (-1);
-            tree->leaf_level[tree->ChildNode(i + offset_1, false) - offset] = ((stat.sum_grad - best.sum_grad) / (stat.count - best.count)) * param.eta * (-1);
+            const Split<grad_type> &best = _bestSplit[i];
+            const NodeStat<grad_type> &stat = _nodeStat[i];
+            tree->leaf_level[tree->ChildNode(i + offset_1, true) - offset] = best.LeafWeight() * param.eta;
+            tree->leaf_level[tree->ChildNode(i + offset_1, false) - offset] = best.LeafWeight(stat) * param.eta;
           }
       }
     };
@@ -600,33 +643,49 @@ namespace arboretum {
       verbose(verbose),
       cfg(cfg),
       _init(false) {}
+
     void Garden::GrowTree(io::DataMatrix* data, float *grad){
 
       if(!_init){
-          std::function<float(float const, float const)> gradFunc;
           switch (param.objective) {
-            case LinearRegression:
-              gradFunc = GradBuilder::Regression;
+            case LinearRegression: {
+              auto obj = new RegressionObjective(data, param.initial_y);
+
+              if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned char, float, float>(param, data, cfg.overlap, obj);
+              else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned short, float, float>(param, data, cfg.overlap, obj);
+              else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned int, float, float>(param, data, cfg.overlap, obj);
+              else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned long int, float, float>(param, data, cfg.overlap, obj);
+              else
+                throw "unsupported depth";
+              _objective = obj;
+              }
+
               break;
-            case LogisticRegression:
-              gradFunc = GradBuilder::LogReg;
+            case LogisticRegression: {
+              auto obj = new LogisticRegressionObjective(data, param.initial_y);
+
+              if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned char, float, float2>(param, data, cfg.overlap, obj);
+              else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned short, float, float2>(param, data, cfg.overlap, obj);
+              else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned int, float, float2>(param, data, cfg.overlap, obj);
+              else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
+                _builder = new TaylorApproximationBuilder<unsigned long int, float, float2>(param, data, cfg.overlap, obj);
+              else
+                throw "unsupported depth";
+              _objective = obj;
+              }
               break;
             default:
                throw "Unknown objective function";
             }
 
-          data->Init(param.initial_y, gradFunc);
-
-          if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned char, float>(param, data, cfg.overlap);
-          else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned short, float>(param, data, cfg.overlap);
-          else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned int, float>(param, data, cfg.overlap);
-          else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-            _builder = new GardenBuilder<unsigned long int, float>(param, data, cfg.overlap);
-          else
-            throw "unsupported depth";
+          data->Init();
 
           auto mem_per_rec = _builder->MemoryRequirementsPerRecord();
           size_t total;
@@ -639,23 +698,24 @@ namespace arboretum {
               printf("Memory usage estimation %ld per record %ld in total \n", mem_per_rec, mem_per_rec * data->rows);
             }
 
-          data->TransferToGPU(free * 4 / 5, verbose.gpu);
+          data->TransferToGPU(free * 9 / 10, verbose.gpu);
 
           _init = true;
         }
 
       if(grad == NULL){
-          SetInitial(data, data->y);
-          data->UpdateGrad();
+          _objective->UpdateGrad();
         } else {
-          data->grad = std::vector<float>(grad, grad + data->rows);
+//          todo: fix
+//          data->grad = std::vector<float>(grad, grad + data->rows);
+
         }
 
         RegTree *tree = new RegTree(param.depth);
-        _builder->GrowTree(tree, data, data->grad);
+        _builder->GrowTree(tree, data);
         _trees.push_back(tree);
         if(grad == NULL){
-            _builder->PredictByGrownTree(tree, data, data->y);
+            _builder->PredictByGrownTree(tree, data, _objective->y);
           }
       }
 
@@ -665,6 +725,7 @@ namespace arboretum {
       for(size_t i = 0; i < _trees.size(); ++i){
           _trees[i]->Predict(data, out);
         }
+      _objective->FromInternal(out);
     }
 
     void Garden::SetInitial(const arboretum::io::DataMatrix *data, std::vector<float> &out){

@@ -19,7 +19,7 @@ param.o: src/core/param.cpp src/core/param.h
 
 garden.o: src/core/garden.cu src/core/garden.h param.o io.o
 
-io.o: src/io/io.cu src/io/io.h src/core/objective.h
+io.o: src/io/io.cu src/io/io.h
 
 python-wrapper/arboretum_wrapper.so: python-wrapper/arboretum_wrapper.cpp python-wrapper/arboretum_wrapper.h io.o garden.o param.o
 

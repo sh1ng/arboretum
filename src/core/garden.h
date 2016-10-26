@@ -1,7 +1,7 @@
 #ifndef BOOSTER_H
 #define BOOSTER_H
 
-//#include <omp.h>
+#include <stdio.h>
 #include <cmath>
 #include <limits>
 #include <thrust/host_vector.h>
@@ -9,32 +9,50 @@
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
 #include "param.h"
 #include "../io/io.h"
+#include "cuda_helpers.h"
 
 namespace arboretum {
   namespace core {
-
     using namespace arboretum;
 
+    template<class grad_type>
     struct Split {
       float split_value;
       int fid;
       double gain;
-      double sum_grad;
+      grad_type sum_grad;
       unsigned int count;
       Split(){
         Clean();
       }
       void Clean(){
         fid = -1;
-        sum_grad = gain = 0.0;
+        gain = 0.0;
+        init(sum_grad);
         count = 0;
         split_value = std::numeric_limits<float>::infinity();
       }
+      float LeafWeight() const {
+        return Split<grad_type>::LeafWeight(sum_grad, count);
+      }
+      template<class node_stat>
+      float LeafWeight(node_stat& parent) const {
+        return Split<grad_type>::LeafWeight(parent.sum_grad - sum_grad, parent.count - count);
+      }
+
+    private:
+      static inline float LeafWeight(float s, unsigned int c){
+        return s/c;
+      }
+      static inline float LeafWeight(float2 s, unsigned int c){
+        return s.x/s.y;
+      }
     };
 
+    template<class grad_type>
     struct NodeStat {
-      int count;
-      double sum_grad;
+      unsigned int count;
+      grad_type sum_grad;
       double gain;
       NodeStat(){
         Clean();
@@ -42,11 +60,8 @@ namespace arboretum {
 
       void Clean(){
         count = 0;
-        gain = sum_grad = 0.0;
-      }
-
-      inline float LeafWeight() const {
-        return sum_grad / count;
+        gain = 0.0;
+        init(sum_grad);
       }
     };
 
@@ -68,26 +83,6 @@ namespace arboretum {
       unsigned id;
       float threshold;
       int fid;
-    };
-
-
-    struct SplitStat {
-      int count;
-      double sum_grad;
-      float last_value;
-      SplitStat() {
-        Clean();
-      }
-      inline double GainForSplit(const NodeStat& nodeStat){
-        const int rigth_count = nodeStat.count - count;
-        const double right_sum = nodeStat.sum_grad - sum_grad;
-        return right_sum * right_sum/rigth_count + sum_grad * sum_grad/count;
-      }
-
-      void Clean(){
-        count = 0;
-        sum_grad = 0.0;
-      }
     };
 
     struct RegTree{
@@ -153,13 +148,79 @@ namespace arboretum {
       }
     };
 
+    class ApproximatedObjectiveBase {
+    public:
+      ApproximatedObjectiveBase(io::DataMatrix* data) : data(data) {}
+      std::vector<float> y;
+      const io::DataMatrix* data;
+      virtual void UpdateGrad() = 0;
+      virtual float IntoInternal(float v) {
+        return v;
+      }
+      virtual inline void FromInternal(std::vector<float>& out) {
+      }
+    };
+
+    template<class grad_type>
+    class ApproximatedObjective : public ApproximatedObjectiveBase {
+    public:
+      ApproximatedObjective(io::DataMatrix* data, float initial_y) : ApproximatedObjectiveBase(data){
+        y.resize(data->rows, IntoInternal(initial_y));
+        grad.resize(data->rows);
+      }
+      thrust::host_vector<float2, thrust::cuda::experimental::pinned_allocator< grad_type > > grad;
+    };
+
+    class RegressionObjective : public ApproximatedObjective<float> {
+    public:
+      RegressionObjective(io::DataMatrix* data, float initial_y)
+        : ApproximatedObjective<float>(data, initial_y){
+
+      }
+      virtual void UpdateGrad() override {
+        #pragma omp parallel for
+        for(size_t i = 0; i < data->rows; ++i){
+            grad[i] = data->y_hat[i] - y[i];
+          }
+      }
+    };
+
+    class LogisticRegressionObjective : public ApproximatedObjective<float2> {
+    public:
+      LogisticRegressionObjective(io::DataMatrix* data, float initial_y)
+        : ApproximatedObjective<float2>(data, initial_y){
+
+      }
+      virtual void UpdateGrad() override {
+        #pragma omp parallel for
+        for(size_t i = 0; i < data->rows; ++i){
+            const float sigmoid = Sigmoid(y[i]);
+            grad[i].x = data->y_hat[i] - sigmoid;
+            grad[i].y = sigmoid * (1.0f - sigmoid);
+          }
+      }
+      virtual inline float IntoInternal(float v) override {
+        return std::log(v/(1-v));
+      }
+      virtual inline void FromInternal(std::vector<float>& out) override {
+        #pragma omp parallel for
+        for(size_t i = 0; i < data->rows; ++i){
+            out[i] = Sigmoid(out[i]);
+          }
+      }
+    private:
+      inline float Sigmoid(float x){
+        return 1.0/(1.0 + std::exp(-x));
+      }
+    };
+
 
     class GardenBuilderBase {
     public:
       virtual size_t MemoryRequirementsPerRecord() = 0;
       virtual void InitGrowingTree() = 0;
       virtual void InitTreeLevel(const int level) = 0;
-      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data, const thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > &grad) = 0;
+      virtual void GrowTree(RegTree *tree, const io::DataMatrix *data) = 0;
       virtual void PredictByGrownTree(RegTree *tree, const io::DataMatrix *data, std::vector<float> &out) = 0;
     };
 
@@ -169,11 +230,12 @@ namespace arboretum {
       const TreeParam param;
       const Verbose verbose;
       const InternalConfiguration cfg;
-      void GrowTree(io::DataMatrix* data, float* grad);
+      void GrowTree(io::DataMatrix* data, float *grad);
       void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out);
     private:
       bool _init;
       GardenBuilderBase* _builder;
+      ApproximatedObjectiveBase* _objective;
       std::vector<RegTree*> _trees;
       void SetInitial(const arboretum::io::DataMatrix *data, std::vector<float> &out);
     };

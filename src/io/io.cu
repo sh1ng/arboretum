@@ -24,11 +24,8 @@ namespace arboretum {
       }
     }
 
-    void DataMatrix::Init(const float initial_y, std::function<float(const float, const float)> func){
+    void DataMatrix::Init(){
       if(!_init){
-          _gradFunc = func;
-          y.resize(y_hat.size(), initial_y);
-
           #pragma omp parallel for
           for(size_t i = 0; i < columns; ++i){
             index[i] = SortedIndex(i);
@@ -60,10 +57,7 @@ namespace arboretum {
     }
 
     void DataMatrix::UpdateGrad(){
-      #pragma omp parallel for
-      for(size_t i = 0; i < rows; ++i){
-          grad[i] = _gradFunc(y[i], y_hat[i]);
-        }
+
     }
     void DataMatrix::TransferToGPU(const size_t free, bool verbose){
       size_t index_size = sizeof(int) * rows;

@@ -23,7 +23,7 @@ config = json.dumps({'objective':0, 'verbose':
 },
 'tree':
 {
-'eta': 0.5,
+'eta': 1.0,
 'max_depth': 6,
 'gamma': 0.0,
 'min_child_weight': 2,

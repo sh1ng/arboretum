@@ -11,11 +11,11 @@ public:
   static inline double Sigmoid(double x){
     return 1.0f / (1.0f + std::exp(-x));
   }
-  static inline double Regression(double y, double y_hat){
-    return 2.0 * (y - y_hat);
+  static inline float2 Regression(float y, float y_hat){
+    return make_float2(2.0 * (y - y_hat), 2.0);
   }
-  static inline double LogReg(double y, double y_hat){
-    return Sigmoid(y) - y_hat;
+  static inline float2 LogReg(float y, float y_hat){
+    return make_float2(y - y_hat, std::max(y * (1.0f - y_hat), 1e-16f));
   }
 };
 

@@ -21,16 +21,15 @@ namespace arboretum {
       std::vector<thrust::device_vector<float>> sorted_data_device;
 
       std::vector<float> y_hat;
-      std::vector<float> y;
-      thrust::host_vector<float, thrust::cuda::experimental::pinned_allocator< float > > grad;
+      thrust::host_vector<float2, thrust::cuda::experimental::pinned_allocator< float2 > > grad;
       size_t rows;
       size_t columns;
-      void Init(const float initial_y, std::function<float(const float, const float)> func);
+      void Init();
       void UpdateGrad();
       void TransferToGPU(const size_t free, bool verbose);
       DataMatrix(int rows, int columns);
     private:
-      std::function<float(const float, const float)> _gradFunc;
+      std::function<float2(const float, const float)> _gradFunc;
       bool _init;
       std::vector<int> SortedIndex(int column);
     };
