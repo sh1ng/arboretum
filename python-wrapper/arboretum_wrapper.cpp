@@ -85,7 +85,13 @@ namespace arboretum {
         std::vector<float> result;
         garden_p->Predict(data_p, result);
 
-        float* p = new float[result.size()];
+        float* p;
+        p = new (nothrow) float [result.size()];
+        if (p == nullptr){
+            printf("unable to allocate array \n");
+            perror("malloc() failed");
+            exit(EXIT_FAILURE);
+        }
         #pragma omp parallel for
         for(size_t i = 0; i < result.size(); ++i){
             p[i] = result[i];

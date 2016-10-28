@@ -203,7 +203,7 @@ namespace arboretum {
       }
       virtual inline void FromInternal(std::vector<float>& out) override {
         #pragma omp parallel for
-        for(size_t i = 0; i < data->rows; ++i){
+        for(size_t i = 0; i < out.size(); ++i){
             out[i] = Sigmoid(out[i]);
           }
       }
