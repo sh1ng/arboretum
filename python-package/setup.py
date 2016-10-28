@@ -22,5 +22,5 @@ setup(name='arboretum',
       zip_safe=False,
       packages=find_packages(),
       include_package_data=True,
-      data_files=[('arboretum', [os.path.join(curr_path, '../python-wrapper/arboretum_wrapper.so')])],
+      data_files=[('arboretum', [ '../python-wrapper/arboretum_wrapper.so'])],
       url='https://github.com/sh1ng/arboretum')
