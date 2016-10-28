@@ -25,11 +25,11 @@ config = json.dumps({'objective':1, 'verbose':
 'eta': 0.2,
 'max_depth': 6,
 'gamma': 0.0,
-'min_child_weight': 2,
-'min_leaf_size': 2,
+'min_child_weight': 2.0,
+'min_leaf_size': 0,
 'colsample_bytree': 1.0,
 'colsample_bylevel': 1.0,
-'lambda': 1.0,
+'lambda': 0.0,
 'alpha': 0.0
 }})
 

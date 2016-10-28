@@ -165,7 +165,6 @@ namespace arboretum {
     class ApproximatedObjective : public ApproximatedObjectiveBase {
     public:
       ApproximatedObjective(io::DataMatrix* data, float initial_y) : ApproximatedObjectiveBase(data){
-        y.resize(data->rows, IntoInternal(initial_y));
         grad.resize(data->rows);
       }
       thrust::host_vector<float2, thrust::cuda::experimental::pinned_allocator< grad_type > > grad;
@@ -175,7 +174,7 @@ namespace arboretum {
     public:
       RegressionObjective(io::DataMatrix* data, float initial_y)
         : ApproximatedObjective<float>(data, initial_y){
-
+        y.resize(data->rows, IntoInternal(initial_y));
       }
       virtual void UpdateGrad() override {
         #pragma omp parallel for
@@ -189,7 +188,7 @@ namespace arboretum {
     public:
       LogisticRegressionObjective(io::DataMatrix* data, float initial_y)
         : ApproximatedObjective<float2>(data, initial_y){
-
+        y.resize(data->rows, IntoInternal(initial_y));
       }
       virtual void UpdateGrad() override {
         #pragma omp parallel for
@@ -237,7 +236,6 @@ namespace arboretum {
       GardenBuilderBase* _builder;
       ApproximatedObjectiveBase* _objective;
       std::vector<RegTree*> _trees;
-      void SetInitial(const arboretum::io::DataMatrix *data, std::vector<float> &out);
     };
 
   }

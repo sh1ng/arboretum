@@ -39,10 +39,23 @@ namespace arboretum {
     
     struct GainFunctionParameters{
     const unsigned int min_leaf_size;
-    GainFunctionParameters(const unsigned int min_leaf_size) : min_leaf_size(min_leaf_size) {}
+    const float hess;
+    const float gamma;
+    const float lambda;
+    const float alpha;
+    GainFunctionParameters(const unsigned int min_leaf_size,
+                           const float hess,
+                           const float gamma,
+                           const float lambda,
+                           const float alpha)
+      : min_leaf_size(min_leaf_size),
+        hess(hess),
+        gamma(gamma),
+        lambda(lambda),
+        alpha(alpha){}
    };
 
-    __device__ unsigned long long int my_atomicMax(unsigned long long int* address, float val1, int val2){
+    __forceinline__ __device__ unsigned long long int my_atomicMax(unsigned long long int* address, float val1, int val2){
         my_atomics loc, loctest;
         loc.floats[0] = val1;
         loc.ints[1] = val2;
@@ -71,42 +84,43 @@ namespace arboretum {
         }
     }
 
-    __host__ __device__  float gain_func(size_t count,
-                               float left_sum){
-      return left_sum*left_sum/count;
+    __forceinline__ __device__ float gain_func(const float2 left_sum,
+                               const float2 total_sum,
+                               const size_t left_count,
+                               const size_t total_count,
+                               const float fvalue,
+                               const float fvalue_prev,
+                               const GainFunctionParameters& params) {
+      if(fvalue != fvalue_prev
+         && left_count >= params.min_leaf_size
+         && (total_count - left_count) >= params.min_leaf_size
+         && std::abs(left_sum.y) >= params.hess
+         && std::abs(total_sum.y - left_sum.y) >= params.hess){
+          const float d = left_sum.y * total_sum.y * (total_sum.y - left_sum.y);
+          const float top = total_sum.y * left_sum.x - left_sum.y * total_sum.x;
+          return top*top/d;
+        } else {
+          return 0.0;
+        }
     }
 
-    __host__ __device__ float gain_func(size_t count,
-                               float2 left_sum){
-      return left_sum.x*left_sum.x/left_sum.y;
-    }
+    __forceinline__ __device__ float gain_func(const float left_sum,
+                                              const float total_sum,
+                                              const size_t left_count,
+                                              const size_t total_count,
+                                              const float fvalue,
+                                              const float fvalue_prev,
+                                              const GainFunctionParameters&  params) {
+      if(fvalue != fvalue_prev
+         && left_count >= params.min_leaf_size
+         && (total_count - left_count) >= params.min_leaf_size){
+          const size_t d = left_count * total_count * (total_count - left_count);
+          const float top = total_count * left_sum - left_count * total_sum;
+          return top*top/d;
+        } else {
+          return 0.0;
+        }
 
-    __device__ float gain_split(size_t left_count,
-                                        size_t total_count,
-                                        float left_sum,
-                                        float total_sum){
-      const size_t d = left_count * total_count * (total_count - left_count);
-      const float top = total_count * left_sum - left_count * total_sum;
-      return top*top/d;
-    }
-
-//    __device__ __forceinline double gain_func(size_t left_count,
-//                                        size_t total_count,
-//                                        double left_sum,
-//                                        double total_sum){
-//      const size_t d = left_count * total_count * (total_count - left_count);
-//      const double top = total_count * left_sum - left_count * total_sum;
-//      return top*top/d;
-//    }
-
-
-    __device__ float gain_split(size_t left_count,
-                                        size_t total_count,
-                                        float2 left_sum,
-                                        float2 total_sum){
-      const float d = left_sum.y * total_sum.y * (total_sum.y - left_sum.y);
-      const float top = total_sum.y * left_sum.x - left_sum.y * total_sum.x;
-      return top*top/d;
     }
 
     template <class node_type, class float_type, typename grad_type>
@@ -130,13 +144,14 @@ namespace arboretum {
 
           const float fvalue = fvalues[i + 1];
           const float fvalue_prev = fvalues[i];
-          const size_t right_count = total_count - left_count_value;
 
-          if(left_count_value >= parameters.min_leaf_size && right_count >= parameters.min_leaf_size && fvalue != fvalue_prev){
-              gain[i] = gain_split(left_count_value, total_count, left_sum_value, total_sum);
-            } else {
-              gain[i] = 0.0;
-            }
+          gain[i] = gain_func(left_sum_value,
+                              total_sum,
+                              left_count_value,
+                              total_count,
+                              fvalue,
+                              fvalue_prev,
+                              parameters);
           }
     }
 
@@ -149,7 +164,7 @@ namespace arboretum {
                                  const ApproximatedObjective<grad_type>* objective) :
         overlap_depth(overlap),
         param(param),
-        gain_param(param.min_leaf_size),
+        gain_param(param.min_leaf_size, param.min_child_weight, param.gamma, param.lambda, param.alpha),
         objective(objective){
 
         const int lenght = 1 << param.depth;
@@ -594,7 +609,7 @@ namespace arboretum {
 
         #pragma omp parallel for
         for(size_t i = 0; i < len; ++i){
-            _nodeStat[i].gain = gain_func(_nodeStat[i].count, _nodeStat[i].sum_grad);
+            _nodeStat[i].gain = 0.0; // todo: gain_func(_nodeStat[i].count, _nodeStat[i].sum_grad);
             _bestSplit[i].Clean();
           }
       }
@@ -721,19 +736,12 @@ namespace arboretum {
 
     void Garden::Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out){
       out.resize(data->rows);
-      std::fill(out.begin(), out.end(), param.initial_y);
+      std::fill(out.begin(), out.end(), _objective->IntoInternal(param.initial_y));
       for(size_t i = 0; i < _trees.size(); ++i){
           _trees[i]->Predict(data, out);
         }
       _objective->FromInternal(out);
-    }
-
-    void Garden::SetInitial(const arboretum::io::DataMatrix *data, std::vector<float> &out){
-      if(out.size() != data->rows){
-          out.resize(data->rows);
-          std::fill(out.begin(), out.end(), param.initial_y);
-        }
-    }
+      }
     }
   }
 
