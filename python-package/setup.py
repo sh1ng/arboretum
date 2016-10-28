@@ -7,9 +7,6 @@ from setuptools import setup, find_packages
 #import subprocess
 sys.path.insert(0, '.')
 
-curr_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
-print os.path.join(curr_path, '../python-wrapper/arboretum_wrapper.so')
-
 setup(name='arboretum',
       version='0.1',
       description='',
