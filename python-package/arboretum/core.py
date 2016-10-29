@@ -23,6 +23,8 @@ def _load_lib():
     lib.APredict.restype = ctypes.c_char_p
     lib.AFreeDMatrix.restype = ctypes.c_char_p
     lib.AFreeGarden.restype = ctypes.c_char_p
+    lib.AAppendLastTree.restype = ctypes.c_char_p
+    lib.AGetY.restype = ctypes.c_char_p
     return lib
 
 _LIB = _load_lib()
@@ -61,7 +63,7 @@ class DMatrix(object):
 
 
     def _init_y(self, y):
-        data = np.array(y.values.reshape(self.rows), dtype=np.float32)
+        data = np.array(y.reshape(self.rows), dtype=np.float32)
         _call_and_throw_if_error(_LIB.ASetY(self.handle,
                                             data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
 
@@ -106,6 +108,23 @@ class Garden(object):
                                                     self.data.handle,
                                                     ctypes.c_void_p(grad)))
 
+    def append_last_tree(self, data):
+        _call_and_throw_if_error(_LIB.AAppendLastTree(self.handle,
+                                               data.handle))
+    def get_y(self, data):
+        length = int(data.rows)
+        preds = ctypes.POINTER(ctypes.c_float)()
+        _call_and_throw_if_error(_LIB.AGetY(self.handle,
+                                                data.handle,
+                                                ctypes.byref(preds)))
+
+
+        if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
+            raise RuntimeError('expected float pointer')
+        res = np.ctypeslib.as_array(preds, shape=(length,))
+
+        return res
+
     def predict(self, data):
         length = int(data.rows)
         preds = ctypes.POINTER(ctypes.c_float)()
@@ -117,10 +136,6 @@ class Garden(object):
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
         res = np.ctypeslib.as_array(preds, shape=(length,))
-        # res = np.empty(length, dtype=np.float32)
-
-        # if not ctypes.memmove(res.ctypes.data, preds, length * res.strides[0]):
-        #     raise RuntimeError('memmove failed')
 
         return res
 

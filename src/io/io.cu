@@ -15,7 +15,6 @@ namespace arboretum {
       data.resize(columns);
       sorted_data.resize(columns);
       index.resize(columns);
-      grad.resize(rows);
       index_device.resize(columns);
       sorted_data_device.resize(columns);
 

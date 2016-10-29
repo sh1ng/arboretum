@@ -103,6 +103,48 @@ namespace arboretum {
       }
     }
 
+    extern "C" const char* AGetY(VoidPointer garden,
+                                            VoidPointer data,
+                                            const float **out){
+      try{
+        io::DataMatrix *data_p = static_cast<DataMatrix*>(data);
+        Garden *garden_p = static_cast<Garden*>(garden);
+
+        std::vector<float> result;
+        garden_p->GetY(data_p, result);
+
+        float* p;
+        p = new (nothrow) float [result.size()];
+        if (p == nullptr){
+            printf("unable to allocate array \n");
+            perror("malloc() failed");
+            exit(EXIT_FAILURE);
+        }
+        #pragma omp parallel for
+        for(size_t i = 0; i < result.size(); ++i){
+            p[i] = result[i];
+          }
+        *out = p;
+        return NULL;
+      } catch(const char* error){
+        return error;
+      }
+    }
+
+    extern "C" const char* AAppendLastTree(VoidPointer garden,
+                                            VoidPointer data){
+      try{
+        io::DataMatrix *data_p = static_cast<DataMatrix*>(data);
+        Garden *garden_p = static_cast<Garden*>(garden);
+
+        garden_p->UpdateByLastTree(data_p);
+
+        return NULL;
+      } catch(const char* error){
+        return error;
+      }
+    }
+
     extern "C" const char* AFreeDMatrix(VoidPointer ptr){
       delete static_cast<DataMatrix*>(ptr);
       return NULL;

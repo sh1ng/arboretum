@@ -151,13 +151,13 @@ namespace arboretum {
     class ApproximatedObjectiveBase {
     public:
       ApproximatedObjectiveBase(io::DataMatrix* data) : data(data) {}
-      std::vector<float> y;
       const io::DataMatrix* data;
       virtual void UpdateGrad() = 0;
       virtual float IntoInternal(float v) {
         return v;
       }
-      virtual inline void FromInternal(std::vector<float>& out) {
+      virtual inline void FromInternal(std::vector<float>& in, std::vector<float>& out) {
+        in = out;
       }
     };
 
@@ -174,12 +174,12 @@ namespace arboretum {
     public:
       RegressionObjective(io::DataMatrix* data, float initial_y)
         : ApproximatedObjective<float>(data, initial_y){
-        y.resize(data->rows, IntoInternal(initial_y));
+        data->y_internal.resize(data->rows, IntoInternal(initial_y));
       }
       virtual void UpdateGrad() override {
         #pragma omp parallel for
         for(size_t i = 0; i < data->rows; ++i){
-            grad[i] = data->y_hat[i] - y[i];
+            grad[i] = data->y_hat[i] - data->y_internal[i];
           }
       }
     };
@@ -188,12 +188,12 @@ namespace arboretum {
     public:
       LogisticRegressionObjective(io::DataMatrix* data, float initial_y)
         : ApproximatedObjective<float2>(data, initial_y){
-        y.resize(data->rows, IntoInternal(initial_y));
+        data->y_internal.resize(data->rows, IntoInternal(initial_y));
       }
       virtual void UpdateGrad() override {
         #pragma omp parallel for
         for(size_t i = 0; i < data->rows; ++i){
-            const float sigmoid = Sigmoid(y[i]);
+            const float sigmoid = Sigmoid(data->y_internal[i]);
             grad[i].x = data->y_hat[i] - sigmoid;
             grad[i].y = sigmoid * (1.0f - sigmoid);
           }
@@ -201,10 +201,10 @@ namespace arboretum {
       virtual inline float IntoInternal(float v) override {
         return std::log(v/(1-v));
       }
-      virtual inline void FromInternal(std::vector<float>& out) override {
+      virtual inline void FromInternal(std::vector<float>& in, std::vector<float>& out) override {
         #pragma omp parallel for
         for(size_t i = 0; i < out.size(); ++i){
-            out[i] = Sigmoid(out[i]);
+            in[i] = Sigmoid(out[i]);
           }
       }
     private:
@@ -220,7 +220,7 @@ namespace arboretum {
       virtual void InitGrowingTree() = 0;
       virtual void InitTreeLevel(const int level) = 0;
       virtual void GrowTree(RegTree *tree, const io::DataMatrix *data) = 0;
-      virtual void PredictByGrownTree(RegTree *tree, const io::DataMatrix *data, std::vector<float> &out) = 0;
+      virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data, std::vector<float> &out) = 0;
     };
 
     class Garden {
@@ -231,6 +231,8 @@ namespace arboretum {
       const InternalConfiguration cfg;
       void GrowTree(io::DataMatrix* data, float *grad);
       void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out);
+      void UpdateByLastTree(arboretum::io::DataMatrix *data);
+      void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out);
     private:
       bool _init;
       GardenBuilderBase* _builder;

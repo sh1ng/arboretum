@@ -31,6 +31,7 @@ namespace arboretum {
         float alpha = cfg.value("/tree/alpha"_json_pointer, 0.0);
         float colsample_bytree = cfg.value("/tree/colsample_bytree"_json_pointer, 1.0);
         float colsample_bylevel = cfg.value("/tree/colsample_bylevel"_json_pointer, 1.0);
+        float initial = cfg.value("/tree/initial_y"_json_pointer, 0.5);
 
         return TreeParam((Objective)objective,
                          max_depth,
@@ -41,6 +42,7 @@ namespace arboretum {
                          gamma,
                          lambda,
                          alpha,
+                         initial,
                          eta);
       }
 
@@ -53,6 +55,7 @@ namespace arboretum {
                 float gamma,
                 float lambda,
                 float alpha,
+                float initial_y,
                 float eta) :
         objective(objective),
         depth(depth),
@@ -63,7 +66,7 @@ namespace arboretum {
         gamma(gamma),
         lambda(lambda),
         alpha(alpha),
-        initial_y(0.5),
+        initial_y(initial_y),
         eta(eta) {
       }
       const Objective objective;

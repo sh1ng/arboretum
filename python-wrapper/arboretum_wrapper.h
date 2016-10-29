@@ -21,6 +21,13 @@ extern "C" const char* AGrowTree(VoidPointer garden,
                                  VoidPointer data,
                                  const float *grad);
 
+extern "C" const char* AAppendLastTree(VoidPointer garden,
+                     VoidPointer data);
+
+extern "C" const char* AGetY(VoidPointer garden,
+                                        VoidPointer data,
+                                        const float **out);
+
 extern "C" const char* APredict(VoidPointer garden,
                      VoidPointer data,
                      const float **out);
