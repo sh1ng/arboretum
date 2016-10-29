@@ -61,7 +61,7 @@ class DMatrix(object):
 
 
     def _init_y(self, y):
-        data = np.array(y.reshape(self.rows), dtype=np.float32)
+        data = np.array(y.values.reshape(self.rows), dtype=np.float32)
         _call_and_throw_if_error(_LIB.ASetY(self.handle,
                                             data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
 
