@@ -2,7 +2,8 @@
 
 #include "cuda_runtime.h"
 #include <math.h>
-#include <climits>
+#include <algorithm>
+#include <random>
 #include <stdio.h>
 #include <limits>
 #include <thrust/device_vector.h>
@@ -160,12 +161,15 @@ namespace arboretum {
     public:
       TaylorApproximationBuilder(const TreeParam &param,
                                  const io::DataMatrix* data,
-                                 const unsigned short overlap,
+                                 const InternalConfiguration& config,
                                  const ApproximatedObjective<grad_type>* objective) :
-        overlap_depth(overlap),
+        rnd(config.seed),
+        overlap_depth(config.overlap),
         param(param),
         gain_param(param.min_leaf_size, param.min_child_weight, param.gamma, param.lambda, param.alpha),
         objective(objective){
+
+        active_fids.resize(data->columns);
 
         const int lenght = 1 << param.depth;
 
@@ -287,7 +291,26 @@ namespace arboretum {
 
       }
 
-      virtual void InitGrowingTree() override {
+      virtual void InitGrowingTree(const size_t columns) override {
+        int take = (int)(param.colsample_bytree * columns);
+        if(take == 0){
+            printf("colsample_bytree is too small %f for %ld columns \n", param.colsample_bytree, columns);
+            throw "colsample_bytree is too small";
+          }
+        take = (int)(param.colsample_bytree * param.colsample_bylevel * columns);
+        if(take == 0){
+            printf("colsample_bytree and colsample_bylevel are too small %f %f for %ld columns \n",
+                   param.colsample_bytree, param.colsample_bylevel, columns);
+            throw "colsample_bytree and colsample_bylevel are too small";
+          }
+
+        for(size_t i = 0; i < columns; ++i){
+            active_fids[i] = i;
+          }
+
+        shuffle(active_fids.begin(), active_fids.end(), rnd);
+
+
         std::fill(_rowIndex2Node.begin(), _rowIndex2Node.end(), 0);
         for(size_t i = 0; i < _nodeStat.size(); ++i){
             _nodeStat[i].Clean();
@@ -297,15 +320,17 @@ namespace arboretum {
           }
       }
 
-      virtual void InitTreeLevel(const int level) override {
+      virtual void InitTreeLevel(const int level, const size_t columns) override {
+        int take = (int)(param.colsample_bytree * columns);
+        shuffle(active_fids.begin(), active_fids.begin() + take, rnd);
       }
 
       virtual void GrowTree(RegTree *tree, const io::DataMatrix *data) override{
-        InitGrowingTree();
+        InitGrowingTree(data->columns);
         grad_d = objective->grad;
 
         for(int i = 0; i < param.depth - 1; ++i){
-          InitTreeLevel(i);
+          InitTreeLevel(i, data->columns);
           UpdateNodeStat(i, data, tree);
           FindBestSplits(i, data);
           UpdateTree(i, tree);
@@ -320,6 +345,8 @@ namespace arboretum {
       }
 
     private:
+      std::default_random_engine rnd;
+      std::vector<int> active_fids;
       const unsigned short overlap_depth;
       const TreeParam param;
       const GainFunctionParameters gain_param;
@@ -393,16 +420,18 @@ namespace arboretum {
           parent_node_count = parent_node_count_h;
         }
 
-                      for(size_t fid = 0; fid < data->columns; ++fid){
+        int take = (int)(param.colsample_bylevel * param.colsample_bytree * data->columns);
 
-                          for(size_t i = 0; i < overlap_depth && (fid + i) < data->columns; ++i){
+                      for(size_t j = 0; j < take; ++j){
 
-                              if(fid != 0 && i < overlap_depth - 1){
+                          for(size_t i = 0; i < overlap_depth && (j + i) < take; ++i){
+
+                              if(j != 0 && i < overlap_depth - 1){
                                   continue;
                                 }
 
-                              size_t active_fid = fid + i;
-                              size_t circular_fid = active_fid % overlap_depth;
+                              size_t active_fid = active_fids[j + i];
+                              size_t circular_fid = (j + i) % overlap_depth;
 
                               cudaStream_t s = streams[circular_fid];
 
@@ -526,7 +555,7 @@ namespace arboretum {
                                               cudaMemcpyDeviceToHost, s);
                             }
 
-                          size_t circular_fid = fid % overlap_depth;
+                          size_t circular_fid = j % overlap_depth;
 
                           cudaStream_t s = streams[circular_fid];
 
@@ -542,7 +571,7 @@ namespace arboretum {
                                 const size_t count_val = results_h[circular_fid][i].ints[1] - parent_node_count_h[i];
                                 const grad_type s = sum[circular_fid][index_value];
                                 const grad_type sum_val = s - parent_node_sum_h[i];
-                                _bestSplit[i].fid = fid;
+                                _bestSplit[i].fid = active_fids[j];
                                 _bestSplit[i].gain = results_h[circular_fid][i].floats[0];
                                 _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
                                 _bestSplit[i].count = count_val;
@@ -667,13 +696,13 @@ namespace arboretum {
               auto obj = new RegressionObjective(data, param.initial_y);
 
               if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned char, float, float>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned char, float, float>(param, data, cfg, obj);
               else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned short, float, float>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned short, float, float>(param, data, cfg, obj);
               else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned int, float, float>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned int, float, float>(param, data, cfg, obj);
               else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned long int, float, float>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned long int, float, float>(param, data, cfg, obj);
               else
                 throw "unsupported depth";
               _objective = obj;
@@ -684,13 +713,13 @@ namespace arboretum {
               auto obj = new LogisticRegressionObjective(data, param.initial_y);
 
               if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned char, float, float2>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned char, float, float2>(param, data, cfg, obj);
               else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned short, float, float2>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned short, float, float2>(param, data, cfg, obj);
               else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned int, float, float2>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned int, float, float2>(param, data, cfg, obj);
               else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned long int, float, float2>(param, data, cfg.overlap, obj);
+                _builder = new TaylorApproximationBuilder<unsigned long int, float, float2>(param, data, cfg, obj);
               else
                 throw "unsupported depth";
               _objective = obj;

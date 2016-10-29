@@ -97,13 +97,16 @@ namespace arboretum {
     public:
       static InternalConfiguration Parse(const json& cfg){
         return InternalConfiguration(cfg.value("/internals/double_precision"_json_pointer, false),
-                                     cfg.value("/internals/compute_overlap"_json_pointer, 2));
+                                     cfg.value("/internals/compute_overlap"_json_pointer, 2),
+                                     cfg.value("/internals/seed"_json_pointer, 0));
       }
-      InternalConfiguration(bool double_precision, unsigned short overlap) :
+      InternalConfiguration(bool double_precision, unsigned short overlap, unsigned int seed) :
         double_precision(double_precision),
-        overlap(overlap) {}
+        overlap(overlap),
+        seed(seed) {}
       const bool double_precision;
       const unsigned short overlap;
+      const unsigned int seed;
     };
   }
 }

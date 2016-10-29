@@ -217,8 +217,8 @@ namespace arboretum {
     class GardenBuilderBase {
     public:
       virtual size_t MemoryRequirementsPerRecord() = 0;
-      virtual void InitGrowingTree() = 0;
-      virtual void InitTreeLevel(const int level) = 0;
+      virtual void InitGrowingTree(const size_t columns) = 0;
+      virtual void InitTreeLevel(const int level, const size_t columns) = 0;
       virtual void GrowTree(RegTree *tree, const io::DataMatrix *data) = 0;
       virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data, std::vector<float> &out) = 0;
     };
