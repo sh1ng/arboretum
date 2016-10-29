@@ -36,7 +36,7 @@ config = json.dumps({'objective':1, 'verbose':
 model = arboretum.Garden(config, data)
 
 # grow trees
-for i in range(1):
+for i in range(5):
     model.grow_tree()
 
 # predict on train data set
@@ -58,7 +58,7 @@ param['eta'] = 0.2
 param['gamma'] = 0.0
 param['alpha'] = 0.0
 
-model = xgboost.train(param, mat, 1)
+model = xgboost.train(param, mat, 5)
 pred = model.predict(mat)
 print(pred)
 print(y)
