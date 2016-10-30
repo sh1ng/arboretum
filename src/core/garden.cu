@@ -292,6 +292,7 @@ namespace arboretum {
         delete[] fvalue_sorted;
         delete[] position;
         delete[] grad_sorted;
+        delete[] grad_sorted_sorted;
         delete[] temp_bytes;
       }
 
