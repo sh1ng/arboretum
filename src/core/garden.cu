@@ -276,6 +276,25 @@ namespace arboretum {
         }
 
     }
+
+      virtual ~TaylorApproximationBuilder(){
+        for(auto i = 0; i < overlap_depth; ++i){
+            CubDebugExit(cudaFree(temp_bytes[i]));
+            CubDebugExit(cudaFree(results[i]));
+            CubDebugExit(cudaFreeHost(results_h[i]));
+            cudaStreamDestroy(streams[i]);
+          }
+        delete[] gain;
+        delete[] sum;
+        delete[] segments;
+        delete[] segments_sorted;
+        delete[] fvalue;
+        delete[] fvalue_sorted;
+        delete[] position;
+        delete[] grad_sorted;
+        delete[] temp_bytes;
+      }
+
       virtual size_t MemoryRequirementsPerRecord() override {
         return sizeof(node_type) + // node
             sizeof(float_type) + //grad

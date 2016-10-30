@@ -151,6 +151,7 @@ namespace arboretum {
     class ApproximatedObjectiveBase {
     public:
       ApproximatedObjectiveBase(io::DataMatrix* data) : data(data) {}
+      virtual ~ApproximatedObjectiveBase(){}
       const io::DataMatrix* data;
       virtual void UpdateGrad() = 0;
       virtual float IntoInternal(float v) {
@@ -216,6 +217,7 @@ namespace arboretum {
 
     class GardenBuilderBase {
     public:
+      virtual ~GardenBuilderBase(){}
       virtual size_t MemoryRequirementsPerRecord() = 0;
       virtual void InitGrowingTree(const size_t columns) = 0;
       virtual void InitTreeLevel(const int level, const size_t columns) = 0;
@@ -226,6 +228,13 @@ namespace arboretum {
     class Garden {
     public:
       Garden(const TreeParam& param, const Verbose& verbose, const InternalConfiguration& cfg);
+      ~Garden(){
+        if(_builder)
+          delete _builder;
+        if(_objective)
+          delete _objective;
+      }
+
       const TreeParam param;
       const Verbose verbose;
       const InternalConfiguration cfg;
