@@ -25,7 +25,6 @@
 
 namespace arboretum {
   namespace core {
-    using namespace std;
     using namespace thrust;
     using namespace thrust::cuda;
     using thrust::host_vector;
@@ -162,7 +161,9 @@ namespace arboretum {
       TaylorApproximationBuilder(const TreeParam &param,
                                  const io::DataMatrix* data,
                                  const InternalConfiguration& config,
-                                 const ApproximatedObjective<grad_type>* objective) :
+                                 const ApproximatedObjective<grad_type>* objective,
+                                 const bool verbose) :
+        verbose(verbose),
         rnd(config.seed),
         overlap_depth(config.overlap),
         param(param),
@@ -345,6 +346,7 @@ namespace arboretum {
       }
 
     private:
+      bool verbose;
       std::default_random_engine rnd;
       std::vector<int> active_fids;
       const unsigned short overlap_depth;
@@ -566,16 +568,22 @@ namespace arboretum {
 
                               if(results_h[circular_fid][i].floats[0] > _bestSplit[i].gain){
                                 const int index_value = results_h[circular_fid][i].ints[1];
-                                const float fvalue_prev_val = fvalue_sorted[circular_fid][index_value];
-                                const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
-                                const size_t count_val = results_h[circular_fid][i].ints[1] - parent_node_count_h[i];
                                 const grad_type s = sum[circular_fid][index_value];
-                                const grad_type sum_val = s - parent_node_sum_h[i];
-                                _bestSplit[i].fid = active_fids[j];
-                                _bestSplit[i].gain = results_h[circular_fid][i].floats[0];
-                                _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
-                                _bestSplit[i].count = count_val;
-                                _bestSplit[i].sum_grad = sum_val;
+                                if(!_isnan(s)){
+                                  const float fvalue_prev_val = fvalue_sorted[circular_fid][index_value];
+                                  const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
+                                  const size_t count_val = results_h[circular_fid][i].ints[1] - parent_node_count_h[i];
+
+                                  const grad_type sum_val = s - parent_node_sum_h[i];
+                                  _bestSplit[i].fid = active_fids[j];
+                                  _bestSplit[i].gain = results_h[circular_fid][i].floats[0];
+                                  _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
+                                  _bestSplit[i].count = count_val;
+                                  _bestSplit[i].sum_grad = sum_val;
+                                  } else {
+                                    if(verbose)
+                                      printf("sum is nan(probably infinity), consider increasing the accuracy \n");
+                                  }
                                 }
                             }
                         }
@@ -696,13 +704,17 @@ namespace arboretum {
               auto obj = new RegressionObjective(data, param.initial_y);
 
               if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned char, float, float>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned char, float, float>
+                    (param, data, cfg, obj, verbose.booster);
               else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned short, float, float>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned short, float, float>
+                    (param, data, cfg, obj, verbose.booster);
               else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned int, float, float>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned int, float, float>
+                    (param, data, cfg, obj, verbose.booster);
               else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned long int, float, float>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned long int, float, float>
+                    (param, data, cfg, obj, verbose.booster);
               else
                 throw "unsupported depth";
               _objective = obj;
@@ -713,13 +725,17 @@ namespace arboretum {
               auto obj = new LogisticRegressionObjective(data, param.initial_y);
 
               if(param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned char, float, float2>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned char, float, float2>
+                    (param, data, cfg, obj, verbose.booster);
               else if(param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned short, float, float2>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned short, float, float2>
+                    (param, data, cfg, obj, verbose.booster);
               else if(param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned int, float, float2>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned int, float, float2>
+                    (param, data, cfg, obj, verbose.booster);
               else if(param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT)
-                _builder = new TaylorApproximationBuilder<unsigned long int, float, float2>(param, data, cfg, obj);
+                _builder = new TaylorApproximationBuilder<unsigned long int, float, float2>
+                    (param, data, cfg, obj, verbose.booster);
               else
                 throw "unsupported depth";
               _objective = obj;

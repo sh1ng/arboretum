@@ -85,12 +85,15 @@ namespace arboretum {
     struct Verbose {
     public:
       static Verbose Parse(const json& cfg){
-        return Verbose(cfg.value("/verbose/gpu"_json_pointer, false));
+        return Verbose(cfg.value("/verbose/gpu"_json_pointer, false),
+                       cfg.value("/verbose/booster"_json_pointer, false));
       }
-      Verbose(bool gpu) :
-        gpu(gpu)
-      {}
+      Verbose(bool gpu,
+              bool booster) :
+        gpu(gpu),
+        booster(booster){}
       const bool gpu;
+      const bool booster;
     };
 
     struct InternalConfiguration {

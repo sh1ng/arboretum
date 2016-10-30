@@ -2,6 +2,27 @@
 #define CUDA_HELPERS_H
 
 #include "cuda_runtime.h"
+#include <stdio.h>
+
+inline bool _isfinite(float2 a)
+{
+    return std::isfinite(a.x) && std::isfinite(a.y);
+}
+
+inline bool _isnan(float2 a)
+{
+    return std::isnan(a.x) || std::isnan(a.y);
+}
+
+inline bool _isfinite(float a)
+{
+    return std::isfinite(a);
+}
+
+inline bool _isnan(float a)
+{
+    return std::isnan(a);
+}
 
 inline __host__ __device__ float2 operator/(float2 a, int b)
 {
