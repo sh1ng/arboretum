@@ -40,7 +40,7 @@ class DMatrix(object):
         self.rows = data.shape[0]
         self.columns = data.shape[1]
         self._init_from_npy2d(data, missing)
-        print data.shape
+        print(data.shape)
         if y is not None:
             assert data.shape[0] == len(y)
             self._init_y(y)

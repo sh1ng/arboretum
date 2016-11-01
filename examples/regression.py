@@ -39,17 +39,17 @@ config = json.dumps({'objective':0, 'verbose':
 model = arboretum.Garden(config, data)
 
 # grow trees
-for i in xrange(5):
+for i in range(5):
     model.grow_tree()
 
 # predict on train data set
 pred = model.predict(data)
 
 # print first n records
-print pred[0:10]
+print(pred[0:10])
 
 #RMSE
-print rmse(pred, y)
+print(rmse(pred, y))
 
 
 # xgboost as refernce value
@@ -58,8 +58,8 @@ y1 = boston.target[0:n]
 
 pred = model.predict(data1)
 
-print pred[0:10]
-print rmse(pred, y1)
+print(pred[0:10])
+print(rmse(pred, y1))
 
 mat = xgboost.DMatrix(boston.data[0:n], label=boston.target[0:n])
 param = {'max_depth':5,
@@ -76,7 +76,7 @@ param['alpha'] = 0.0
 
 model = xgboost.train(param, mat, 5)
 pred = model.predict(mat)
-print pred[0:10]
-print boston.target[0:10]
+print(pred[0:10])
+print(boston.target[0:10])
 
-print rmse(pred, y)
+print(rmse(pred, y))
