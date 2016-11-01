@@ -4,42 +4,42 @@
 #include "cuda_runtime.h"
 #include <stdio.h>
 
-inline bool _isfinite(float2 a)
+inline bool _isfinite(const float2 a)
 {
     return std::isfinite(a.x) && std::isfinite(a.y);
 }
 
-inline bool _isnan(float2 a)
+inline bool _isnan(const float2 a)
 {
     return std::isnan(a.x) || std::isnan(a.y);
 }
 
-inline bool _isfinite(float a)
+inline bool _isfinite(const float a)
 {
     return std::isfinite(a);
 }
 
-inline bool _isnan(float a)
+inline bool _isnan(const float a)
 {
     return std::isnan(a);
 }
 
-inline __host__ __device__ float2 operator/(float2 a, int b)
+inline __host__ __device__ float2 operator/(const float2 a, const int b)
 {
     return make_float2(a.x / b, a.y / b);
 }
 
-inline __host__ __device__ float2 operator*(float2 a, float2 b)
+inline __host__ __device__ float2 operator*(const float2 a, const float2 b)
 {
     return make_float2(a.x * b.x, a.y * b.y);
 }
 
-inline __host__ __device__ float2 operator-(float2 a, float2 b)
+inline __host__ __device__ float2 operator-(const float2 a, const float2 b)
 {
     return make_float2(a.x - b.x, a.y - b.y);
 }
 
-inline __host__ __device__ float2 operator+(float2 a, float2 b)
+inline __host__ __device__ float2 operator+(const float2 a, const float2 b)
 {
     return make_float2(a.x + b.x, a.y + b.y);
 }

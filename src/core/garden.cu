@@ -361,7 +361,7 @@ namespace arboretum {
         UpdateLeafWeight(tree);
       }
 
-      virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data, std::vector<float> &out) override {
+      virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data, std::vector<float> &out) const override {
         tree->Predict(data, _rowIndex2Node, out);
       }
 
@@ -805,12 +805,12 @@ namespace arboretum {
       _trees.back()->Predict(data, data->y_internal);
     }
 
-    void Garden::GetY(arboretum::io::DataMatrix *data, std::vector<float> &out){
+    void Garden::GetY(arboretum::io::DataMatrix *data, std::vector<float> &out) const {
       out.resize(data->y_internal.size());
       _objective->FromInternal(out, data->y_internal);
     }
 
-    void Garden::Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out){
+    void Garden::Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out) const {
       out.resize(data->rows);
       std::fill(out.begin(), out.end(), _objective->IntoInternal(param.initial_y));
       for(size_t i = 0; i < _trees.size(); ++i){

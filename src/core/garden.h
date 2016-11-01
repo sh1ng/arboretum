@@ -222,7 +222,7 @@ namespace arboretum {
       virtual void InitGrowingTree(const size_t columns) = 0;
       virtual void InitTreeLevel(const int level, const size_t columns) = 0;
       virtual void GrowTree(RegTree *tree, const io::DataMatrix *data) = 0;
-      virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data, std::vector<float> &out) = 0;
+      virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data, std::vector<float> &out) const = 0;
     };
 
     class Garden {
@@ -239,9 +239,9 @@ namespace arboretum {
       const Verbose verbose;
       const InternalConfiguration cfg;
       void GrowTree(io::DataMatrix* data, float *grad);
-      void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out);
+      void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out) const;
       void UpdateByLastTree(arboretum::io::DataMatrix *data);
-      void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out);
+      void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out) const;
     private:
       bool _init;
       GardenBuilderBase* _builder;
