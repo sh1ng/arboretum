@@ -32,7 +32,7 @@ namespace arboretum {
 
           for(size_t i = 0; i < columns; ++i){
             std::vector<float> tmp(data[i].size());
-            #pragma omp parallel for
+            #pragma omp parallel for simd
             for(size_t j = 0; j < rows; ++j){
                 tmp[j] = data[i][index[i][j]];
               }

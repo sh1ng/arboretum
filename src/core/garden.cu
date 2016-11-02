@@ -630,7 +630,7 @@ namespace arboretum {
 
         size_t len = 1 << (level - 1);
 
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < len; ++i){
             _nodeStat[tree->ChildNode(i + offset, true) - offset_next].count = _bestSplit[i].count;
             _nodeStat[tree->ChildNode(i + offset, true) - offset_next].sum_grad = _bestSplit[i].sum_grad;
@@ -650,7 +650,7 @@ namespace arboretum {
             {
               grad_type sum_thread;
               init(sum_thread);
-              #pragma omp for nowait
+              #pragma omp for simd
               for(size_t i = 0; i < data->rows; ++i){
                   sum_thread += objective->grad[i];
                 }
@@ -664,7 +664,7 @@ namespace arboretum {
 
         size_t len = 1 << level;
 
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < len; ++i){
             _nodeStat[i].gain = 0.0; // todo: gain_func(_nodeStat[i].count, _nodeStat[i].sum_grad);
             _bestSplit[i].Clean();
@@ -676,7 +676,7 @@ namespace arboretum {
 
         const size_t len = 1 << level;
 
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < len; ++i){
             const Split<grad_type> &best = _bestSplit[i];
             tree->nodes[i + offset].threshold = best.split_value;
@@ -690,7 +690,7 @@ namespace arboretum {
       void UpdateNodeIndex(const unsigned int level, const io::DataMatrix *data, RegTree *tree) {
         unsigned int offset = Node::HeapOffset(level);
         unsigned int offset_next = Node::HeapOffset(level + 1);
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < data->rows; ++i){
             const unsigned int node = _rowIndex2Node[i];
             auto &best = _bestSplit[node];

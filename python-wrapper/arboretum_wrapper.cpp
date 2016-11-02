@@ -20,8 +20,9 @@ namespace arboretum {
                                           VoidPointer *out){
       try{
         DataMatrix* mat = new DataMatrix(nrow, ncol);
-        #pragma omp parallel for
-        for(int i = 0; i<ncol*nrow; ++i){
+        const size_t size = ncol*nrow;
+        #pragma omp parallel for simd
+        for(size_t i = 0; i < size; ++i){
             mat->data[i % ncol][i / ncol] = data[i];
           }
         *out = static_cast<VoidPointer>(mat);
@@ -36,7 +37,7 @@ namespace arboretum {
    try{
         DataMatrix *data_ptr = static_cast<DataMatrix*>(data);
         data_ptr->y_hat.reserve(data_ptr->rows);
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < data_ptr->rows; ++i){
           data_ptr->y_hat[i] = y[i];
         }
@@ -92,7 +93,7 @@ namespace arboretum {
             perror("malloc() failed");
             exit(EXIT_FAILURE);
         }
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < result.size(); ++i){
             p[i] = result[i];
           }
@@ -120,7 +121,7 @@ namespace arboretum {
             perror("malloc() failed");
             exit(EXIT_FAILURE);
         }
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < result.size(); ++i){
             p[i] = result[i];
           }

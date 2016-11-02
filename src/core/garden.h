@@ -128,7 +128,7 @@ namespace arboretum {
       }
 
       void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out) const {
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < data->rows; ++i){
             unsigned int node_id = 0;
             Node current_node = nodes[node_id];
@@ -141,7 +141,7 @@ namespace arboretum {
       }
 
       void Predict(const arboretum::io::DataMatrix *data, const thrust::host_vector<size_t> &row2Node, std::vector<float> &out) const {
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < data->rows; ++i){
             out[i] += leaf_level[row2Node[i]];
           }
@@ -178,7 +178,7 @@ namespace arboretum {
         data->y_internal.resize(data->rows, IntoInternal(initial_y));
       }
       virtual void UpdateGrad() override {
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < data->rows; ++i){
             grad[i] = data->y_hat[i] - data->y_internal[i];
           }
@@ -192,7 +192,7 @@ namespace arboretum {
         data->y_internal.resize(data->rows, IntoInternal(initial_y));
       }
       virtual void UpdateGrad() override {
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < data->rows; ++i){
             const float sigmoid = Sigmoid(data->y_internal[i]);
             grad[i].x = data->y_hat[i] - sigmoid;
@@ -203,7 +203,7 @@ namespace arboretum {
         return std::log(v/(1-v));
       }
       virtual inline void FromInternal(std::vector<float>& in, std::vector<float>& out) override {
-        #pragma omp parallel for
+        #pragma omp parallel for simd
         for(size_t i = 0; i < out.size(); ++i){
             in[i] = Sigmoid(out[i]);
           }
