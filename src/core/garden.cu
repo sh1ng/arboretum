@@ -704,8 +704,8 @@ namespace arboretum {
         for(unsigned int i = 0, len = (1 << (tree->depth - 2)); i < len; ++i){
             const Split<grad_type> &best = _bestSplit[i];
             const NodeStat<grad_type> &stat = _nodeStat[i];
-            tree->leaf_level[tree->ChildNode(i + offset_1, true) - offset] = best.LeafWeight() * param.eta;
-            tree->leaf_level[tree->ChildNode(i + offset_1, false) - offset] = best.LeafWeight(stat) * param.eta;
+            tree->leaf_level[tree->ChildNode(i + offset_1, true) - offset] = best.LeafWeight(param) * param.eta;
+            tree->leaf_level[tree->ChildNode(i + offset_1, false) - offset] = best.LeafWeight(stat, param) * param.eta;
           }
       }
     };

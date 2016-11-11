@@ -32,6 +32,8 @@ namespace arboretum {
         float colsample_bytree = cfg.value("/tree/colsample_bytree"_json_pointer, 1.0);
         float colsample_bylevel = cfg.value("/tree/colsample_bylevel"_json_pointer, 1.0);
         float initial = cfg.value("/tree/initial_y"_json_pointer, 0.5);
+        float max_leaf_weight = cfg.value("/tree/max_leaf_weight"_json_pointer, 0.0);
+        float scale_pos_weight = cfg.value("/tree/scale_pos_weight"_json_pointer, 0.5);
 
         return TreeParam((Objective)objective,
                          max_depth,
@@ -43,7 +45,9 @@ namespace arboretum {
                          lambda,
                          alpha,
                          initial,
-                         eta);
+                         eta,
+                         max_leaf_weight,
+                         scale_pos_weight);
       }
 
       TreeParam(Objective objective,
@@ -56,7 +60,9 @@ namespace arboretum {
                 float lambda,
                 float alpha,
                 float initial_y,
-                float eta) :
+                float eta,
+                float max_leaf_weight,
+                float scale_pos_weight) :
         objective(objective),
         depth(depth),
         min_child_weight(min_child_weight),
@@ -67,8 +73,9 @@ namespace arboretum {
         lambda(lambda),
         alpha(alpha),
         initial_y(initial_y),
-        eta(eta) {
-      }
+        eta(eta),
+        max_leaf_weight(max_leaf_weight),
+        scale_pos_weight(scale_pos_weight) {}
       const Objective objective;
       const int depth;
       const float min_child_weight;
@@ -80,6 +87,8 @@ namespace arboretum {
       const float alpha;
       const float initial_y;
       const float eta;
+      const float max_leaf_weight;
+      const float scale_pos_weight;
     };
 
     struct Verbose {

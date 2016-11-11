@@ -32,12 +32,27 @@ namespace arboretum {
         count = 0;
         split_value = std::numeric_limits<float>::infinity();
       }
-      float LeafWeight() const {
-        return Split<grad_type>::LeafWeight(sum_grad, count);
+      inline float LeafWeight(const TreeParam& param) const {
+        const float w = Split<grad_type>::LeafWeight(sum_grad, count);
+        if (param.max_leaf_weight != 0.0f) {
+            if (w > param.max_leaf_weight)
+              return param.max_leaf_weight;
+            if (w < -param.max_leaf_weight)
+              return - param.max_leaf_weight;
+          }
+        return w;
       }
+
       template<class node_stat>
-      float LeafWeight(node_stat& parent) const {
-        return Split<grad_type>::LeafWeight(parent.sum_grad - sum_grad, parent.count - count);
+      inline float LeafWeight(node_stat& parent, const TreeParam& param) const {
+        const float w = Split<grad_type>::LeafWeight(parent.sum_grad - sum_grad, parent.count - count);
+        if (param.max_leaf_weight != 0.0f) {
+            if (w > param.max_leaf_weight)
+              return param.max_leaf_weight;
+            if (w < -param.max_leaf_weight)
+              return - param.max_leaf_weight;
+          }
+        return w;
       }
 
     private:
@@ -233,6 +248,9 @@ namespace arboretum {
           delete _builder;
         if(_objective)
           delete _objective;
+        for(auto i = 0; i < _trees.size(); ++i){
+            delete _trees[i];
+          }
       }
 
       const TreeParam param;
