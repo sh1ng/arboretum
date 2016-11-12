@@ -94,7 +94,7 @@ class Garden(object):
         if not self._init:
             self.handle = ctypes.c_void_p()
 
-            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self._config),
+            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self._config.encode('UTF-8')),
                                                       ctypes.byref(self.handle)))
             self._init = True
 
