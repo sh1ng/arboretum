@@ -27,4 +27,6 @@ extern "C" const char *AFreeDMatrix(VoidPointer ptr);
 
 extern "C" const char *AFreeGarden(VoidPointer ptr);
 
+extern "C" const char *ADeleteArray(float *in);
+
 #endif // ARBORETUM_WRAPPER

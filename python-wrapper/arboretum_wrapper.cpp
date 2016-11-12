@@ -147,5 +147,9 @@ extern "C" const char *AFreeGarden(VoidPointer ptr) {
   delete static_cast<Garden *>(ptr);
   return NULL;
 }
+extern "C" const char *ADeleteArray(float *in) {
+  delete[] in;
+  return NULL;
+}
 }
 }

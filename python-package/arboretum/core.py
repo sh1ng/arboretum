@@ -25,6 +25,7 @@ def _load_lib():
     lib.AFreeGarden.restype = ctypes.c_char_p
     lib.AAppendLastTree.restype = ctypes.c_char_p
     lib.AGetY.restype = ctypes.c_char_p
+    lib.ADeleteArray.restype = ctypes.c_char_p
     return lib
 
 _LIB = _load_lib()
@@ -121,7 +122,9 @@ class Garden(object):
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
-        res = np.ctypeslib.as_array(preds, shape=(length,))
+        res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
+
+        _call_and_throw_if_error(_LIB.ADeleteArray(preds))
 
         return res
 
@@ -135,7 +138,9 @@ class Garden(object):
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
-        res = np.ctypeslib.as_array(preds, shape=(length,))
+        res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
+
+        _call_and_throw_if_error(_LIB.ADeleteArray(preds))
 
         return res
 
