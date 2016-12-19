@@ -9,6 +9,9 @@ extern "C" const char *ACreateFromDanseMatrix(const float *data, int nrow,
 
 extern "C" const char *ASetY(VoidPointer data, const float *y);
 
+extern "C" const char *ASetLabel(VoidPointer data,
+                                 const unsigned char *labels);
+
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *garden);
 

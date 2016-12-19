@@ -7,7 +7,15 @@ namespace arboretum {
 namespace core {
 using nlohmann::json;
 
-enum Objective { LinearRegression, LogisticRegression };
+enum Objective {
+  LinearRegression,
+  LogisticRegression,
+  LogisticRegressionNoSigmoind,
+  SoftMaxOneVsAll,
+  SoftMaxOptimal
+};
+
+enum EvalMetric { RMSE, ROC_AUC };
 
 template <typename T> struct ThreadSpecific {
   T data;
@@ -36,23 +44,26 @@ public:
         cfg.value("/tree/max_leaf_weight"_json_pointer, 0.0);
     float scale_pos_weight =
         cfg.value("/tree/scale_pos_weight"_json_pointer, 0.5);
+    unsigned char labels_count =
+        cfg.value("/tree/labels_count"_json_pointer, 1);
 
     return TreeParam((Objective)objective, max_depth, min_child_weight,
                      min_leaf_size, colsample_bytree, colsample_bylevel, gamma,
                      lambda, alpha, initial, eta, max_leaf_weight,
-                     scale_pos_weight);
+                     scale_pos_weight, labels_count);
   }
 
   TreeParam(Objective objective, int depth, float min_child_weight,
             unsigned int min_leaf_size, float colsample_bytre,
             float colsample_bylevel, float gamma, float lambda, float alpha,
             float initial_y, float eta, float max_leaf_weight,
-            float scale_pos_weight)
+            float scale_pos_weight, unsigned short labels_count)
       : objective(objective), depth(depth), min_child_weight(min_child_weight),
         min_leaf_size(min_leaf_size), colsample_bytree(colsample_bytre),
         colsample_bylevel(colsample_bylevel), gamma(gamma), lambda(lambda),
         alpha(alpha), initial_y(initial_y), eta(eta),
-        max_leaf_weight(max_leaf_weight), scale_pos_weight(scale_pos_weight) {}
+        max_leaf_weight(max_leaf_weight), scale_pos_weight(scale_pos_weight),
+        labels_count(labels_count) {}
   const Objective objective;
   const unsigned int depth;
   const float min_child_weight;
@@ -66,6 +77,7 @@ public:
   const float eta;
   const float max_leaf_weight;
   const float scale_pos_weight;
+  const unsigned char labels_count;
 };
 
 struct Verbose {

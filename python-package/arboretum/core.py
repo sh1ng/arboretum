@@ -26,6 +26,7 @@ def _load_lib():
     lib.AAppendLastTree.restype = ctypes.c_char_p
     lib.AGetY.restype = ctypes.c_char_p
     lib.ADeleteArray.restype = ctypes.c_char_p
+    lib.ASetLabel.restype = ctypes.c_char_p
     return lib
 
 _LIB = _load_lib()
@@ -35,16 +36,22 @@ def _call_and_throw_if_error(ret):
         raise ArboretumError(ValueError(ret))
 
 class DMatrix(object):
-    def __init__(self, data, y = None, missing=0.0, silent=False,
-                 feature_names=None, feature_types=None):
+    def __init__(self, data, y = None, labels = None,  missing=0.0):
 
+        self.labels_count = 1
         self.rows = data.shape[0]
         self.columns = data.shape[1]
         self._init_from_npy2d(data, missing)
         print(data.shape)
+        if y is not None and labels is not None:
+            raise ValueError('y and labels both are not None. Specify labels only for multi label classification')
         if y is not None:
             assert data.shape[0] == len(y)
             self._init_y(y)
+        elif labels is not None:
+            self.labels_count = np.max(labels) + 1
+            assert data.shape[0] == len(labels)
+            self._init_labels(labels)
 
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeDMatrix(self.handle))
@@ -67,6 +74,10 @@ class DMatrix(object):
         data = np.array(y.reshape(self.rows), dtype=np.float32)
         _call_and_throw_if_error(_LIB.ASetY(self.handle,
                                             data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
+    def _init_labels(self, labels):
+        data = np.array(labels.reshape(self.rows), dtype=np.uint8)
+        _call_and_throw_if_error(_LIB.ASetLabel(self.handle,
+                                            data.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))))
 
 
 class Garden(object):
@@ -78,6 +89,7 @@ class Garden(object):
         self.data = data
         self._config = config
         self._init = False
+        self.labels_count = data.labels_count
 
 
 
@@ -122,7 +134,12 @@ class Garden(object):
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
-        res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
+
+        if self.labels_count == 1:
+            res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
+        else:
+            res = np.copy(np.ctypeslib.as_array(preds, shape=(length, self.labels_count)))
+
 
         _call_and_throw_if_error(_LIB.ADeleteArray(preds))
 
@@ -138,7 +155,11 @@ class Garden(object):
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
-        res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
+
+        if self.labels_count == 1:
+            res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
+        else:
+            res = np.copy(np.ctypeslib.as_array(preds, shape=(length, self.labels_count)))
 
         _call_and_throw_if_error(_LIB.ADeleteArray(preds))
 

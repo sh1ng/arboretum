@@ -30,7 +30,7 @@ config = json.dumps({'objective':0, 'verbose':
 'min_leaf_size': 2,
 'colsample_bytree': 1.0,
 'colsample_bylevel': 1.0,
-'lambda': 1.0,
+'lambda': 0.0,
 'alpha': 0.0
 }})
 

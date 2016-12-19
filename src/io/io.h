@@ -28,6 +28,7 @@ public:
 
   std::vector<float> y_hat;
   std::vector<float> y_internal;
+  std::vector<unsigned char> labels;
   size_t rows;
   size_t columns;
   void Init();

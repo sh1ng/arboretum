@@ -44,6 +44,21 @@ extern "C" const char *ASetY(VoidPointer data, const float *y) {
   }
 }
 
+extern "C" const char *ASetLabel(VoidPointer data,
+                                 const unsigned char *labels) {
+  try {
+    DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
+    data_ptr->labels.reserve(data_ptr->rows);
+#pragma omp parallel for simd
+    for (size_t i = 0; i < data_ptr->rows; ++i) {
+      data_ptr->labels[i] = labels[i];
+    }
+    return NULL;
+  } catch (const char *error) {
+    return error;
+  }
+}
+
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *out) {
 
