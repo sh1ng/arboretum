@@ -11,7 +11,7 @@ def rmse(y, y_hat):
 
 # load test data
 boston = load_boston()
-n = 10000
+n = 10
 
 # create data matrix
 data = arboretum.DMatrix(boston.data[0:n], y=boston.target[0:n])
@@ -44,7 +44,7 @@ config = json.dumps({'objective':0,
 model = arboretum.Garden(config, data)
 
 # grow trees
-for i in range(5):
+for i in range(1):
     model.grow_tree()
 
 # predict on train data set
@@ -79,11 +79,12 @@ param['eta'] = 1.0
 param['gamma'] = 0.0
 param['alpha'] = 0.0
 
-model = xgboost.train(param, mat, 5)
+model = xgboost.train(param, mat, 1)
 pred_xgb = model.predict(mat)
 print(pred_xgb[0:10])
 print(boston.target[0:10])
 
 print(rmse(pred_xgb, y))
 
+print(np.count_nonzero(pred != pred_xgb))
 assert np.count_nonzero(pred != pred_xgb) == 0
