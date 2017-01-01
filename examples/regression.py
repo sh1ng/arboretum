@@ -80,8 +80,10 @@ param['gamma'] = 0.0
 param['alpha'] = 0.0
 
 model = xgboost.train(param, mat, 5)
-pred = model.predict(mat)
-print(pred[0:10])
+pred_xgb = model.predict(mat)
+print(pred_xgb[0:10])
 print(boston.target[0:10])
 
-print(rmse(pred, y))
+print(rmse(pred_xgb, y))
+
+assert np.count_nonzero(pred != pred_xgb) == 0
