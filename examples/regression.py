@@ -17,7 +17,12 @@ n = 10000
 data = arboretum.DMatrix(boston.data[0:n], y=boston.target[0:n])
 y = boston.target[0:n]
 
-config = json.dumps({'objective':0, 'verbose':
+config = json.dumps({'objective':0,
+                     'internals':
+                             {
+                                 'double_precision':True
+                             },
+                     'verbose':
 {
 'gpu': True
 },
