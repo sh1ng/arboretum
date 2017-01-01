@@ -9,7 +9,8 @@ namespace arboretum {
 namespace io {
 using namespace std;
 
-DataMatrix::DataMatrix(int rows, int columns) : rows(rows), columns(columns) {
+DataMatrix::DataMatrix(int rows, int columns)
+    : rows(rows), columns(columns), columns_dense(columns), columns_sparse(0) {
   _init = false;
   data.resize(columns);
   sorted_data.resize(columns);
@@ -24,12 +25,14 @@ DataMatrix::DataMatrix(int rows, int columns) : rows(rows), columns(columns) {
 
 void DataMatrix::Init() {
   if (!_init) {
+    lil_column_device.resize(columns_sparse);
+
 #pragma omp parallel for
-    for (size_t i = 0; i < columns; ++i) {
+    for (size_t i = 0; i < columns_dense; ++i) {
       index[i] = SortedIndex(i);
     }
 
-    for (size_t i = 0; i < columns; ++i) {
+    for (size_t i = 0; i < columns_dense; ++i) {
       std::vector<float> tmp(data[i].size());
 #pragma omp parallel for simd
       for (size_t j = 0; j < rows; ++j) {
@@ -41,10 +44,10 @@ void DataMatrix::Init() {
   }
 }
 
-std::vector<int> DataMatrix::SortedIndex(int column) {
+std::vector<unsigned int> DataMatrix::SortedIndex(int column) {
   auto &v = data[column];
   size_t size = v.size();
-  std::vector<int> idx(size);
+  std::vector<unsigned int> idx(size);
   for (size_t i = 0; i < size; i++)
     idx[i] = i;
 
@@ -55,18 +58,18 @@ std::vector<int> DataMatrix::SortedIndex(int column) {
 }
 
 void DataMatrix::UpdateGrad() {}
-void DataMatrix::TransferToGPU(const size_t free, bool verbose) {
-  size_t index_size = sizeof(int) * rows;
+void DataMatrix::TransferToGPU(size_t free, bool verbose) {
+  size_t index_size = sizeof(unsigned int) * rows;
   size_t data_size = sizeof(float) * rows;
-  size_t copy_count = std::min(free / index_size, columns);
+  size_t copy_count = std::min(free / index_size, columns_dense);
   for (size_t i = 0; i < copy_count; ++i) {
     index_device[i] = index[i];
   }
   if (verbose)
-    printf("copied index data %ld from %ld \n", copy_count, columns);
+    printf("copied index data %ld from %ld \n", copy_count, columns_dense);
 
-  copy_count =
-      std::min((free - copy_count * sizeof(int) * rows) / data_size, columns);
+  free -= copy_count * index_size;
+  copy_count = std::min(free / data_size, columns_dense);
   for (size_t i = 0; i < copy_count; ++i) {
     sorted_data_device[i].resize(rows + 1);
     sorted_data_device[i][0] = -std::numeric_limits<float>::infinity();
@@ -74,7 +77,26 @@ void DataMatrix::TransferToGPU(const size_t free, bool verbose) {
                  sorted_data_device[i].begin() + 1);
   }
   if (verbose)
-    printf("copied features data %ld from %ld \n", copy_count, columns);
+    printf("copied features data %ld from %ld \n", copy_count, columns_dense);
+
+  free -= copy_count * data_size;
+
+  copy_count = 0;
+
+  for (size_t i = 0; i < columns_sparse; ++i) {
+    size_t size = lil_column[i].size();
+
+    if (size * sizeof(unsigned int) < free) {
+      copy_count++;
+      lil_column_device[i] = lil_column[i];
+      free -= size * sizeof(unsigned int);
+    } else {
+      break;
+    }
+  }
+  if (verbose)
+    printf("copied sparse features %ld from %ld \n", copy_count,
+           columns_sparse);
 }
 }
 }

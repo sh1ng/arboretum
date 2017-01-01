@@ -7,6 +7,10 @@ extern "C" const char *ACreateFromDanseMatrix(const float *data, int nrow,
                                               int ncol, float missing,
                                               VoidPointer *out);
 
+extern "C" const char *ASetCSCMatrix(VoidPointer data, const int *indices,
+                                        const int *indptr, unsigned int rows,
+                                        unsigned int columns, int nnz);
+
 extern "C" const char *ASetY(VoidPointer data, const float *y);
 
 extern "C" const char *ASetLabel(VoidPointer data,

@@ -27,6 +27,7 @@ def _load_lib():
     lib.AGetY.restype = ctypes.c_char_p
     lib.ADeleteArray.restype = ctypes.c_char_p
     lib.ASetLabel.restype = ctypes.c_char_p
+    lib.ASetCSCMatrix.restype = ctypes.c_char_p
     return lib
 
 _LIB = _load_lib()
@@ -36,12 +37,16 @@ def _call_and_throw_if_error(ret):
         raise ArboretumError(ValueError(ret))
 
 class DMatrix(object):
-    def __init__(self, data, y = None, labels = None,  missing=0.0):
+    def __init__(self, data, data_csc=None, y=None, labels=None,  missing=0.0):
 
         self.labels_count = 1
         self.rows = data.shape[0]
         self.columns = data.shape[1]
         self._init_from_npy2d(data, missing)
+        if data_csc is not None:
+            print('sparse data', data_csc.shape)
+            self._add_sparse(data_csc)
+
         print(data.shape)
         if y is not None and labels is not None:
             raise ValueError('y and labels both are not None. Specify labels only for multi label classification')
@@ -55,6 +60,18 @@ class DMatrix(object):
 
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeDMatrix(self.handle))
+
+    def _add_sparse(self, csc):
+        nnz = csc.nnz
+        (rows, cols) = csc.shape
+        assert rows == self.rows
+        _call_and_throw_if_error(_LIB.ASetCSCMatrix(self.handle,
+                                            csc.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                                            csc.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                                            ctypes.c_uint(rows),
+                                            ctypes.c_uint(cols),
+                                            ctypes.c_int(nnz)))
+
 
     def _init_from_npy2d(self, mat, missing):
         if len(mat.shape) != 2:

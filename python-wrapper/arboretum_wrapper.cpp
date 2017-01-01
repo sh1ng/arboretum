@@ -30,6 +30,40 @@ extern "C" const char *ACreateFromDanseMatrix(const float *data, int nrow,
   }
 }
 
+extern "C" const char *ASetCSCMatrix(VoidPointer data, const int *indices,
+                                     const int *indptr, unsigned int rows, unsigned int columns,
+                                     int nnz) {
+  try {
+    DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
+    if (data_ptr->rows != rows) {
+      std::ostringstream errorStream;
+      errorStream << "Inconsistent data expected rows count " << data_ptr->rows
+                  << " recived " << rows;
+      throw errorStream.str().c_str();
+    }
+    data_ptr->lil_column.resize(columns);
+    data_ptr->lil_row.resize(rows);
+    data_ptr->columns_sparse = columns;
+    data_ptr->columns += columns;
+
+    for (unsigned int i = 0; i < columns && indptr[i] != nnz; ++i) {
+      data_ptr->lil_column[i] = thrust::host_vector<
+          unsigned int,
+          thrust::cuda::experimental::pinned_allocator<unsigned int>>(
+          indices + indptr[i], indices + indptr[i + 1]);
+
+#pragma omp parallel for simd
+      for (int j = indptr[i]; j < indptr[i + 1]; ++j) {
+        data_ptr->lil_row[indices[j]].push_back(i + data_ptr->columns_dense);
+      }
+    }
+
+    return NULL;
+  } catch (const char *error) {
+    return error;
+  }
+}
+
 extern "C" const char *ASetY(VoidPointer data, const float *y) {
   try {
     DataMatrix *data_ptr = static_cast<DataMatrix *>(data);

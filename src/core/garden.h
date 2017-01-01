@@ -18,6 +18,7 @@ using namespace arboretum;
 
 template <class grad_type> struct Split {
   float split_value;
+  bool split_by_true;
   int fid;
   double gain;
   grad_type sum_grad;
@@ -25,6 +26,7 @@ template <class grad_type> struct Split {
   Split() { Clean(); }
   void Clean() {
     fid = -1;
+    split_by_true = false;
     gain = 0.0;
     init(sum_grad);
     count = 0;
@@ -73,12 +75,17 @@ template <class grad_type> struct NodeStat {
   unsigned int count;
   grad_type sum_grad;
   double gain;
-  NodeStat() { Clean(); }
+  std::vector<unsigned int> sparse_stat;
+
+  NodeStat(size_t sparse_features) : sparse_stat(sparse_features, 0) {
+    Clean();
+  }
 
   void Clean() {
     count = 0;
     gain = 0.0;
     init(sum_grad);
+    std::fill(sparse_stat.begin(), sparse_stat.end(), 0);
   }
 };
 
@@ -95,11 +102,12 @@ struct Node {
     return (1 << level) - 1;
   }
 
-  Node(int id) : id(id), fid(-111) {}
+  Node(int id) : id(id), fid(0), split_by_true(false) {}
 
   unsigned id;
   float threshold;
-  int fid;
+  unsigned int fid;
+  bool split_by_true;
 };
 
 struct RegTree {
@@ -151,8 +159,14 @@ struct RegTree {
       Node current_node = nodes[node_id];
       for (size_t j = 1, len = depth; j < len; ++j) {
         current_node = nodes[node_id];
-        node_id = ChildNode(node_id, data->data[current_node.fid][i] <=
-                                         current_node.threshold);
+        bool isLeft =
+            (current_node.fid < data->columns_dense &&
+             data->data[current_node.fid][i] <= current_node.threshold) ||
+            (current_node.split_by_true &&
+             std::binary_search(data->lil_row[i].begin(),
+                                data->lil_row[i].end(), current_node.fid));
+
+        node_id = ChildNode(node_id, isLeft);
       }
       out[i + label * data->rows] += leaf_level[node_id - offset];
     }
@@ -290,7 +304,7 @@ private:
   const unsigned char labels_count;
   inline float Sigmoid(float x) { return 1.0 / (1.0 + std::exp(-x)); }
 
-//  #pragma omp declare simd
+  //  #pragma omp declare simd
   inline void SoftMax(std::vector<double> &values) const {
     double sum = 0.0;
     for (unsigned short i = 0; i < labels_count; ++i) {
@@ -307,7 +321,8 @@ class GardenBuilderBase {
 public:
   virtual ~GardenBuilderBase() {}
   virtual size_t MemoryRequirementsPerRecord() = 0;
-  virtual void InitGrowingTree(const size_t columns) = 0;
+  virtual void InitGrowingTree(const size_t columns,
+                               const size_t sparse_columns) = 0;
   virtual void InitTreeLevel(const int level, const size_t columns) = 0;
   virtual void GrowTree(RegTree *tree, const io::DataMatrix *data,
                         const unsigned short label) = 0;
