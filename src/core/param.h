@@ -84,11 +84,14 @@ struct Verbose {
 public:
   static Verbose Parse(const json &cfg) {
     return Verbose(cfg.value("/verbose/gpu"_json_pointer, false),
-                   cfg.value("/verbose/booster"_json_pointer, false));
+                   cfg.value("/verbose/booster"_json_pointer, false),
+                   cfg.value("/verbose/data"_json_pointer, false));
   }
-  Verbose(bool gpu, bool booster) : gpu(gpu), booster(booster) {}
+  Verbose(bool gpu, bool booster, bool data)
+      : gpu(gpu), booster(booster), data(data) {}
   const bool gpu;
   const bool booster;
+  const bool data;
 };
 
 struct InternalConfiguration {

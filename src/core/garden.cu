@@ -61,10 +61,10 @@ updateAtomicMax(unsigned long long int *address, float val1,
   return loctest.ulong;
 }
 
-template <class type1, class type2>
+template <class T1, class T2>
 __global__ void gather_kernel(const unsigned int *const __restrict__ position,
-                              const type1 *const __restrict__ in1, type1 *out1,
-                              const type2 *const __restrict__ in2, type2 *out2,
+                              const T1 *const __restrict__ in1, T1 *out1,
+                              const T2 *const __restrict__ in2, T2 *out2,
                               const size_t n) {
   for (size_t i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
@@ -142,29 +142,48 @@ gain_func(const double left_sum, const double total_sum,
   }
 }
 
-template <class node_type, typename sum_type>
+template <typename NODE_T, typename NODE_VALUE_T>
+__global__ void assign_kernel(const unsigned int *const __restrict__ fvalue,
+                              const NODE_T *const __restrict__ segments,
+                              const unsigned char fvalue_size,
+                              NODE_VALUE_T *out, const size_t n) {
+  for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
+       i += gridDim.x * blockDim.x) {
+    const NODE_VALUE_T node = segments[i];
+    out[i] = (node << fvalue_size) | (NODE_VALUE_T)fvalue[i];
+  }
+}
+
+template <typename SUM_T, typename NODE_VALUE_T>
 __global__ void
-gain_kernel(const sum_type *const __restrict__ left_sum,
-            const float *const __restrict__ fvalues,
-            const node_type *const __restrict__ segments,
-            const sum_type *const __restrict__ parent_sum_iter,
+gain_kernel(const SUM_T *const __restrict__ left_sum,
+            const NODE_VALUE_T *const __restrict__ segments_fvalues,
+            const unsigned char fvalue_size, const NODE_VALUE_T mask,
+            const SUM_T *const __restrict__ parent_sum_iter,
             const unsigned int *const __restrict__ parent_count_iter,
             const size_t n, const GainFunctionParameters parameters,
             my_atomics *res) {
   for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
-    const float fvalue = fvalues[i + 1];
-    const float fvalue_prev = fvalues[i];
-    if (fvalue != fvalue_prev) {
-      const node_type segment = segments[i];
+    if (i == 0)
+      continue;
 
-      const sum_type left_sum_offset = parent_sum_iter[segment];
-      const sum_type left_sum_value = left_sum[i] - left_sum_offset;
+    const unsigned int fvalue_segment = segments_fvalues[i];
+    const unsigned int fvalue_segment_prev = segments_fvalues[i - 1];
+
+    const unsigned int fvalue = fvalue_segment & mask;
+    const unsigned int fvalue_prev = fvalue_segment_prev & mask;
+
+    if (fvalue != fvalue_prev) {
+      const unsigned int segment = fvalue_segment_prev >> fvalue_size;
+
+      const SUM_T left_sum_offset = parent_sum_iter[segment];
+      const SUM_T left_sum_value = left_sum[i] - left_sum_offset;
 
       const size_t left_count_offset = parent_count_iter[segment];
       const size_t left_count_value = i - left_count_offset;
 
-      const sum_type total_sum = parent_sum_iter[segment + 1] - left_sum_offset;
+      const SUM_T total_sum = parent_sum_iter[segment + 1] - left_sum_offset;
       const size_t total_count =
           parent_count_iter[segment + 1] - left_count_offset;
 
@@ -177,12 +196,12 @@ gain_kernel(const sum_type *const __restrict__ left_sum,
   }
 }
 
-template <typename node_type, typename grad_type, typename sum_type>
+template <typename NODE_T, typename GRAD_T, typename SUM_T>
 class TaylorApproximationBuilder : public GardenBuilderBase {
 public:
   TaylorApproximationBuilder(const TreeParam &param, const io::DataMatrix *data,
                              const InternalConfiguration &config,
-                             const ApproximatedObjective<grad_type> *objective,
+                             const ApproximatedObjective<GRAD_T> *objective,
                              const bool verbose)
       : verbose(verbose), rnd(config.seed), overlap_depth(config.overlap),
         param(param), gain_param(param.min_leaf_size, param.min_child_weight,
@@ -199,27 +218,20 @@ public:
 
     int minGridSize;
     cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSizeGain,
-                                       gain_kernel<node_type, sum_type>, 0, 0);
+                                       gain_kernel<SUM_T, NODE_T>, 0, 0);
     gridSizeGain = (data->rows + blockSizeGain - 1) / blockSizeGain;
 
     minGridSize = 0;
 
     cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSizeGather,
-                                       gather_kernel<node_type, float>, 0, 0);
+                                       gather_kernel<NODE_T, float>, 0, 0);
     gridSizeGather = (data->rows + blockSizeGather - 1) / blockSizeGather;
-
-    //    minGridSize = 0;
-
-    //    cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSizeMax,
-    //                                       my_max_idx<float_type, node_type>,
-    //                                       0, 0);
-    //    gridSizeMax = (data->rows + blockSizeMax - 1) / blockSizeMax;
 
     row2Node.resize(data->rows);
     _rowIndex2Node.resize(data->rows, 0);
     _bestSplit.resize(1 << (param.depth - 2));
     _nodeStat.resize(1 << (param.depth - 2),
-                     NodeStat<sum_type>(data->columns_sparse));
+                     NodeStat<SUM_T>(data->columns_sparse));
 
     parent_node_sum.resize(lenght + 1);
     parent_node_count.resize(lenght + 1);
@@ -230,20 +242,18 @@ public:
       cudaStream_t s;
       cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
       streams[i] = s;
-      sum[i] = device_vector<sum_type>(data->rows);
-      segments[i] = device_vector<node_type>(data->rows);
-      segments_sorted[i] = device_vector<node_type>(data->rows);
-      fvalue[i] = device_vector<float>(data->rows + 1);
-      fvalue[i][0] = -std::numeric_limits<float>::infinity();
-      fvalue_sorted[i] = device_vector<float>(data->rows + 1);
-      fvalue_sorted[i][0] = -std::numeric_limits<float>::infinity();
+      sum[i] = device_vector<SUM_T>(data->rows);
+      fvalue[i] = device_vector<unsigned int>(data->rows);
+      node_fvalue[i] = device_vector<NODE_T>(data->rows);
+      node_fvalue_sorted[i] = device_vector<NODE_T>(data->rows);
       position[i] = device_vector<unsigned int>(data->rows);
-      grad_sorted[i] = device_vector<grad_type>(data->rows);
-      grad_sorted_sorted[i] = device_vector<grad_type>(data->rows);
+      grad_sorted[i] = device_vector<GRAD_T>(data->rows);
+      grad_sorted_sorted[i] = device_vector<GRAD_T>(data->rows);
       temp_bytes_allocated[i] = 0;
       CubDebugExit(cudaMalloc(&(results[i]), sizeof(my_atomics) * lenght));
       CubDebugExit(
           cudaMallocHost(&(results_h[i]), sizeof(my_atomics) * lenght));
+      CubDebugExit(cudaMallocHost(&(best_split_h[i]), sizeof(NODE_T) * 2));
     }
 
     {
@@ -253,26 +263,17 @@ public:
 
       CubDebugExit(cub::DeviceRadixSort::SortPairs(
           NULL, temp_storage_bytes,
-          thrust::raw_pointer_cast(segments[0].data()),
-          thrust::raw_pointer_cast(segments_sorted[0].data()),
+          thrust::raw_pointer_cast(node_fvalue[0].data()),
+          thrust::raw_pointer_cast(node_fvalue_sorted[0].data()),
           thrust::raw_pointer_cast(grad_sorted[0].data()),
           thrust::raw_pointer_cast(grad_sorted_sorted[0].data()), data->rows, 0,
-          1));
-      max = std::max(max, temp_storage_bytes);
-
-      CubDebugExit(cub::DeviceRadixSort::SortPairs(
-          NULL, temp_storage_bytes,
-          thrust::raw_pointer_cast(segments[0].data()),
-          thrust::raw_pointer_cast(segments_sorted[0].data()),
-          thrust::raw_pointer_cast(fvalue[0].data() + 1),
-          thrust::raw_pointer_cast(fvalue_sorted[0].data() + 1), data->rows, 0,
           1));
 
       max = std::max(max, temp_storage_bytes);
 
       temp_storage_bytes = 0;
 
-      sum_type initial_value;
+      SUM_T initial_value;
       init(initial_value);
       cub::Sum sum_op;
 
@@ -290,6 +291,8 @@ public:
       for (size_t i = 0; i < overlap_depth; ++i) {
         AllocateMemoryIfRequire(i, max);
       }
+
+      temp_bytes_per_rec = temp_bytes_allocated[0] / data->rows;
     }
   }
 
@@ -298,30 +301,37 @@ public:
       CubDebugExit(cudaFree(temp_bytes[i]));
       CubDebugExit(cudaFree(results[i]));
       CubDebugExit(cudaFreeHost(results_h[i]));
+      CubDebugExit(cudaFreeHost(best_split_h[i]));
       cudaStreamDestroy(streams[i]);
     }
+
+    delete[] temp_bytes;
+    delete[] results;
+    delete[] results_h;
+    delete[] best_split_h;
+    delete[] streams;
+
     delete[] sum;
-    delete[] segments;
-    delete[] segments_sorted;
     delete[] fvalue;
-    delete[] fvalue_sorted;
+    delete[] node_fvalue;
+    delete[] node_fvalue_sorted;
     delete[] position;
     delete[] grad_sorted;
     delete[] grad_sorted_sorted;
-    delete[] temp_bytes;
   }
 
   virtual size_t MemoryRequirementsPerRecord() override {
-    return sizeof(node_type) +  // node
-           sizeof(grad_type) +  // grad
-           (sizeof(sum_type) +  // sum
-            sizeof(node_type) + // segments
-            sizeof(node_type) + // segments_sorted
-            sizeof(float) +     // fvalue
-            sizeof(int) +       // position
-            sizeof(grad_type) + // grad_sorted
-            sizeof(grad_type)   // grad_sorted_sorted
-            ) * overlap_depth;
+    return sizeof(NODE_T) +     // node
+           sizeof(GRAD_T) +     // grad
+           (sizeof(SUM_T) +     // sum
+            sizeof(unsigned int) + // fvalue
+            sizeof(NODE_T) +    // node_fvalue
+            sizeof(NODE_T) +    // node_fvalue_sorted
+            sizeof(int) +          // position
+            sizeof(GRAD_T) +    // grad_sorted
+            sizeof(GRAD_T) +    // grad_sorted_sorted
+            temp_bytes_per_rec) *
+               overlap_depth;
   }
 
   virtual void InitGrowingTree(const size_t columns,
@@ -370,9 +380,9 @@ public:
     cudaMemcpyAsync(
         thrust::raw_pointer_cast(grad_d.data()),
         thrust::raw_pointer_cast(objective->grad.data() + label * data->rows),
-        data->rows * sizeof(grad_type), cudaMemcpyHostToDevice, streams[0]);
+        data->rows * sizeof(GRAD_T), cudaMemcpyHostToDevice, streams[0]);
 
-    grad_slice = const_cast<grad_type *>(
+    grad_slice = const_cast<GRAD_T *>(
         thrust::raw_pointer_cast(objective->grad.data() + label * data->rows));
 
     InitGrowingTree(data->columns, data->columns_sparse);
@@ -400,40 +410,42 @@ private:
   const unsigned short overlap_depth;
   const TreeParam param;
   const GainFunctionParameters gain_param;
-  grad_type *grad_slice;
-  const ApproximatedObjective<grad_type> *objective;
-  host_vector<node_type,
-              thrust::cuda::experimental::pinned_allocator<node_type>>
+  GRAD_T *grad_slice;
+  const ApproximatedObjective<GRAD_T> *objective;
+  host_vector<NODE_T,
+              thrust::cuda::experimental::pinned_allocator<NODE_T>>
       _rowIndex2Node;
-  std::vector<NodeStat<sum_type>> _nodeStat;
-  std::vector<Split<sum_type>> _bestSplit;
+  std::vector<NodeStat<SUM_T>> _nodeStat;
+  std::vector<Split<SUM_T>> _bestSplit;
 
-  device_vector<sum_type> *sum = new device_vector<sum_type>[ overlap_depth ];
-  device_vector<node_type> *segments =
-      new device_vector<node_type>[ overlap_depth ];
-  device_vector<node_type> *segments_sorted =
-      new device_vector<node_type>[ overlap_depth ];
-  device_vector<float> *fvalue = new device_vector<float>[ overlap_depth ];
-  device_vector<float> *fvalue_sorted =
-      new device_vector<float>[ overlap_depth ];
+  device_vector<SUM_T> *sum = new device_vector<SUM_T>[ overlap_depth ];
+  device_vector<unsigned int> *fvalue =
+      new device_vector<unsigned int>[ overlap_depth ];
+  device_vector<NODE_T> *node_fvalue =
+      new device_vector<NODE_T>[ overlap_depth ];
+  device_vector<NODE_T> *node_fvalue_sorted =
+      new device_vector<NODE_T>[ overlap_depth ];
   device_vector<unsigned int> *position =
       new device_vector<unsigned int>[ overlap_depth ];
-  device_vector<grad_type> *grad_sorted =
-      new device_vector<grad_type>[ overlap_depth ];
-  device_vector<grad_type> *grad_sorted_sorted =
-      new device_vector<grad_type>[ overlap_depth ];
+  device_vector<GRAD_T> *grad_sorted =
+      new device_vector<GRAD_T>[ overlap_depth ];
+  device_vector<GRAD_T> *grad_sorted_sorted =
+      new device_vector<GRAD_T>[ overlap_depth ];
   cudaStream_t *streams = new cudaStream_t[overlap_depth];
-  device_vector<grad_type> grad_d;
-  device_vector<node_type> row2Node;
-  device_vector<sum_type> parent_node_sum;
+  device_vector<GRAD_T> grad_d;
+  device_vector<NODE_T> row2Node;
+  device_vector<SUM_T> parent_node_sum;
   device_vector<unsigned int> parent_node_count;
-  host_vector<sum_type> parent_node_sum_h;
+  host_vector<SUM_T> parent_node_sum_h;
   host_vector<unsigned int> parent_node_count_h;
+  size_t temp_bytes_per_rec = 0;
   size_t *temp_bytes_allocated = new size_t[overlap_depth];
   void **temp_bytes = new void *[overlap_depth];
   my_atomics **results = new my_atomics *[overlap_depth];
   my_atomics **results_h = new my_atomics *[overlap_depth];
   std::vector<std::vector<unsigned int>> sparse_stat;
+
+  NODE_T **best_split_h = new NODE_T *[overlap_depth];
 
   int blockSizeGain;
   int gridSizeGain;
@@ -456,11 +468,11 @@ private:
     }
   }
 
-  void FindBestSplits(const int level, const io::DataMatrix *data) {
+  void FindBestSplits(const unsigned int level, const io::DataMatrix *data) {
 
     cudaMemcpyAsync(thrust::raw_pointer_cast((row2Node.data())),
                     thrust::raw_pointer_cast(_rowIndex2Node.data()),
-                    data->rows * sizeof(node_type), cudaMemcpyHostToDevice,
+                    data->rows * sizeof(NODE_T), cudaMemcpyHostToDevice,
                     streams[0]);
 
     size_t lenght = 1 << level;
@@ -494,9 +506,24 @@ private:
         size_t active_fid = active_fids[j + i];
         size_t circular_fid = (j + i) % overlap_depth;
 
-        if (active_fid < data->columns_dense)
-          ProcessDenceFeature(active_fid, circular_fid, level, data);
-        else
+        if (active_fid < data->columns_dense) {
+          if ((data->reduced_size[active_fid] + level) <
+              sizeof(unsigned char) * CHAR_BIT) {
+            ProcessDenseFeature<unsigned char>(active_fid, circular_fid, level,
+                                               data);
+          } else if ((data->reduced_size[active_fid] + level) <
+                     sizeof(unsigned short) * CHAR_BIT) {
+            ProcessDenseFeature<unsigned short>(active_fid, circular_fid, level,
+                                                data);
+          } else if ((data->reduced_size[active_fid] + level) <
+                     sizeof(unsigned int) * CHAR_BIT) {
+            ProcessDenseFeature<unsigned int>(active_fid, circular_fid, level,
+                                              data);
+          } else {
+            ProcessDenseFeature<NODE_T>(active_fid, circular_fid, level,
+                                           data);
+          }
+        } else
           ProcessSparseFeature(active_fid - data->columns_dense, circular_fid,
                                level, data);
       }
@@ -508,7 +535,22 @@ private:
       cudaStreamSynchronize(s);
 
       if (active_fids[j] < data->columns_dense) {
-        GetBestSplitForDenceFeature(active_fids[j], circular_fid, lenght);
+        if ((data->reduced_size[active_fids[j]] + level) <
+            sizeof(unsigned char) * CHAR_BIT) {
+          GetBestSplitForDenseFeature<unsigned char>(
+              active_fids[j], circular_fid, lenght, data);
+        } else if ((data->reduced_size[active_fids[j]] + level) <
+                   sizeof(unsigned short) * CHAR_BIT) {
+          GetBestSplitForDenseFeature<unsigned short>(
+              active_fids[j], circular_fid, lenght, data);
+        } else if ((data->reduced_size[active_fids[j]] + level) <
+                   sizeof(unsigned int) * CHAR_BIT) {
+          GetBestSplitForDenseFeature<unsigned int>(active_fids[j],
+                                                    circular_fid, lenght, data);
+        } else {
+          GetBestSplitForDenseFeature<NODE_T>(active_fids[j], circular_fid,
+                                                 lenght, data);
+        }
       } else {
         GetBestSplitForSparseFeature(active_fids[j] - data->columns_dense,
                                      data->columns_dense, circular_fid, lenght);
@@ -516,10 +558,10 @@ private:
     }
 
     for (size_t i = 0; i < lenght; ++i) {
-      Split<sum_type> &split = _bestSplit[i];
+      Split<SUM_T> &split = _bestSplit[i];
 
       if (split.fid < 0) {
-        NodeStat<sum_type> &node_stat = _nodeStat[i];
+        NodeStat<SUM_T> &node_stat = _nodeStat[i];
         _bestSplit[i].gain = 0.0;
         _bestSplit[i].fid = 0;
         _bestSplit[i].split_value = std::numeric_limits<float>::infinity();
@@ -529,26 +571,54 @@ private:
     }
   }
 
-  inline void GetBestSplitForDenceFeature(const int active_fid,
-                                          const size_t circular_fid,
-                                          const size_t lenght) {
+  template <typename NODE_VALUE_T>
+  inline void
+  GetBestSplitForDenseFeature(const int active_fid, const size_t circular_fid,
+                              const size_t lenght, const io::DataMatrix *data) {
     for (size_t i = 0; i < lenght; ++i) {
       if (_nodeStat[i].count <= 0)
         continue;
       if (results_h[circular_fid][i].floats[0] > _bestSplit[i].gain) {
         const int index_value = results_h[circular_fid][i].ints[1];
-        const sum_type s = sum[circular_fid][index_value];
+        const SUM_T s = sum[circular_fid][index_value];
         if (!_isnan(s)) {
-          const float fvalue_prev_val =
-              fvalue_sorted[circular_fid][index_value];
-          const float fvalue_val = fvalue_sorted[circular_fid][index_value + 1];
+
+          cudaMemcpyAsync((NODE_VALUE_T *)best_split_h[circular_fid],
+                          (NODE_VALUE_T *)thrust::raw_pointer_cast(
+                              node_fvalue_sorted[circular_fid].data()) +
+                              index_value - 1,
+                          sizeof(NODE_VALUE_T), cudaMemcpyDeviceToHost,
+                          streams[circular_fid]);
+
+          cudaMemcpyAsync(((NODE_VALUE_T *)best_split_h[circular_fid]) + 1,
+                          (NODE_VALUE_T *)thrust::raw_pointer_cast(
+                              node_fvalue_sorted[circular_fid].data()) +
+                              index_value,
+                          sizeof(NODE_VALUE_T), cudaMemcpyDeviceToHost,
+                          streams[circular_fid]);
+
+          cudaStreamSynchronize(streams[circular_fid]);
+
+          const NODE_VALUE_T segment_fvalue_prev_val =
+              ((NODE_VALUE_T *)best_split_h[circular_fid])[0];
+          const NODE_VALUE_T segment_fvalue_val =
+              ((NODE_VALUE_T *)best_split_h[circular_fid])[1];
+
+          const NODE_VALUE_T mask = (1 << (data->reduced_size[active_fid])) - 1;
+
+          const NODE_VALUE_T fvalue_prev_val = segment_fvalue_prev_val & mask;
+          const NODE_VALUE_T fvalue_val = segment_fvalue_val & mask;
+
           const size_t count_val =
               results_h[circular_fid][i].ints[1] - parent_node_count_h[i];
 
-          const sum_type sum_val = s - parent_node_sum_h[i];
+          const SUM_T sum_val = s - parent_node_sum_h[i];
           _bestSplit[i].fid = active_fid;
           _bestSplit[i].gain = results_h[circular_fid][i].floats[0];
-          _bestSplit[i].split_value = (fvalue_prev_val + fvalue_val) * 0.5;
+          _bestSplit[i].split_value =
+              (data->data_reduced_mapping[active_fid][fvalue_prev_val] +
+               data->data_reduced_mapping[active_fid][fvalue_val]) *
+              0.5;
           _bestSplit[i].count = count_val;
           _bestSplit[i].sum_grad = sum_val;
         } else {
@@ -567,7 +637,7 @@ private:
     for (size_t i = 0; i < lenght; ++i) {
       if (sparse_stat[active_fid][i] == 0)
         continue;
-      sum_type sum_true = sum[circular_fid][i];
+      SUM_T sum_true = sum[circular_fid][i];
       if (!_isnan(sum_true)) {
         float gain = gain_func(sum_true, _nodeStat[i].sum_grad,
                                sparse_stat[active_fid][i], _nodeStat[i].count,
@@ -588,113 +658,69 @@ private:
     }
   }
 
-  inline void ProcessDenceFeature(const size_t active_fid,
-                                  const size_t circular_fid, const int level,
+  template <typename NODE_VALUE_T>
+  inline void ProcessDenseFeature(const size_t active_fid,
+                                  const size_t circular_fid, const size_t level,
                                   const io::DataMatrix *data) {
 
     size_t lenght = 1 << level;
 
     cudaStream_t s = streams[circular_fid];
 
-    device_vector<float> *fvalue_tmp = NULL;
+    device_vector<unsigned int> *fvalue_tmp = NULL;
 
     cudaMemsetAsync(results[circular_fid], 0, lenght * sizeof(my_atomics), s);
 
     if (data->sorted_data_device[active_fid].size() > 0) {
-      fvalue_tmp = const_cast<device_vector<float> *>(
+      fvalue_tmp = const_cast<device_vector<unsigned int> *>(
           &(data->sorted_data_device[active_fid]));
     } else {
       cudaMemcpyAsync(
-          thrust::raw_pointer_cast((&fvalue[circular_fid].data()[1])),
-          thrust::raw_pointer_cast(data->sorted_data[active_fid].data()),
-          data->rows * sizeof(float), cudaMemcpyHostToDevice, s);
+          thrust::raw_pointer_cast((fvalue[circular_fid].data())),
+          thrust::raw_pointer_cast(data->data_reduced[active_fid].data()),
+          data->rows * sizeof(unsigned int), cudaMemcpyHostToDevice, s);
       cudaStreamSynchronize(s);
-      fvalue_tmp = const_cast<device_vector<float> *>(&(fvalue[circular_fid]));
+      fvalue_tmp =
+          const_cast<device_vector<unsigned int> *>(&(fvalue[circular_fid]));
     }
 
-    device_vector<unsigned int> *index_tmp = NULL;
-
-    if (data->index_device[active_fid].size() > 0) {
-      index_tmp = const_cast<device_vector<unsigned int> *>(
-          &(data->index_device[active_fid]));
-    } else {
-      cudaMemcpyAsync(thrust::raw_pointer_cast(position[circular_fid].data()),
-                      thrust::raw_pointer_cast(data->index[active_fid].data()),
-                      data->rows * sizeof(unsigned int), cudaMemcpyHostToDevice,
-                      s);
-      cudaStreamSynchronize(s);
-      index_tmp =
-          const_cast<device_vector<unsigned int> *>(&(position[circular_fid]));
-    }
-
-    gather_kernel<<<gridSizeGather, blockSizeGather, 0, s>>>(
-        thrust::raw_pointer_cast(index_tmp->data()),
+    assign_kernel<<<gridSizeGather, blockSizeGather, 0, s>>>(
+        thrust::raw_pointer_cast(fvalue_tmp->data()),
         thrust::raw_pointer_cast(row2Node.data()),
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
+        data->reduced_size[active_fid],
+        (NODE_VALUE_T *)thrust::raw_pointer_cast(
+            node_fvalue[circular_fid].data()),
+        data->rows);
+
+    CubDebugExit(cub::DeviceRadixSort::SortPairs(
+        temp_bytes[circular_fid], temp_bytes_allocated[circular_fid],
+        (NODE_VALUE_T *)thrust::raw_pointer_cast(
+            node_fvalue[circular_fid].data()),
+        (NODE_VALUE_T *)thrust::raw_pointer_cast(
+            node_fvalue_sorted[circular_fid].data()),
         thrust::raw_pointer_cast(grad_d.data()),
-        thrust::raw_pointer_cast(grad_sorted[circular_fid].data()), data->rows);
-
-    size_t temp_storage_bytes = 0;
-
-    CubDebugExit(cub::DeviceRadixSort::SortPairs(
-        NULL, temp_storage_bytes,
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
         thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
-        data->rows, 0, level + 1, s));
+        data->rows, 0, data->reduced_size[active_fid] + level + 1, s));
 
-    CubDebugExit(cub::DeviceRadixSort::SortPairs(
-        temp_bytes[circular_fid], temp_storage_bytes,
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
-        data->rows, 0, level + 1, s));
-
-    temp_storage_bytes = 0;
-
-    CubDebugExit(cub::DeviceRadixSort::SortPairs(
-        NULL, temp_storage_bytes,
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(fvalue_tmp->data() + 1),
-        thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
-        data->rows, 0, level + 1, s));
-
-    CubDebugExit(cub::DeviceRadixSort::SortPairs(
-        temp_bytes[circular_fid], temp_storage_bytes,
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(fvalue_tmp->data() + 1),
-        thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data() + 1),
-        data->rows, 0, level + 1, s));
-    temp_storage_bytes = 0;
-
-    sum_type initial_value;
+    SUM_T initial_value;
     init(initial_value);
     cub::Sum sum_op;
 
     CubDebugExit(cub::DeviceScan::ExclusiveScan(
-        NULL, temp_storage_bytes,
+        temp_bytes[circular_fid], temp_bytes_allocated[circular_fid],
         thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
         thrust::raw_pointer_cast(sum[circular_fid].data()), sum_op,
         initial_value, data->rows, s));
 
-    CubDebugExit(cub::DeviceScan::ExclusiveScan(
-        temp_bytes[circular_fid], temp_storage_bytes,
-        thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(sum[circular_fid].data()), sum_op,
-        initial_value, data->rows, s));
-    temp_storage_bytes = 0;
+    const NODE_VALUE_T mask = (1 << (data->reduced_size[active_fid])) - 1;
 
     gain_kernel<<<gridSizeGain, blockSizeGain, 0, s>>>(
         thrust::raw_pointer_cast(sum[circular_fid].data()),
-        thrust::raw_pointer_cast(fvalue_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+        (NODE_VALUE_T *)thrust::raw_pointer_cast(
+            node_fvalue_sorted[circular_fid].data()),
+        data->reduced_size[active_fid], mask,
         thrust::raw_pointer_cast(parent_node_sum.data()),
-        thrust::raw_pointer_cast(parent_node_count.data()),
-        data->rows,
+        thrust::raw_pointer_cast(parent_node_count.data()), data->rows,
         gain_param, results[circular_fid]);
 
     cudaMemcpyAsync(results_h[circular_fid], results[circular_fid],
@@ -702,7 +728,8 @@ private:
   }
 
   inline void ProcessSparseFeature(const size_t active_fid,
-                                   const size_t circular_fid, const int level,
+                                   const size_t circular_fid,
+                                   const size_t level,
                                    const io::DataMatrix *data) {
     const size_t lenght = 1 << level;
     const size_t feature_size = data->lil_column[active_fid].size();
@@ -727,47 +754,27 @@ private:
     gather_kernel<<<gridSizeGather, blockSizeGather, 0, s>>>(
         thrust::raw_pointer_cast(index_tmp->data()),
         thrust::raw_pointer_cast(row2Node.data()),
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
+        thrust::raw_pointer_cast(node_fvalue[circular_fid].data()),
         thrust::raw_pointer_cast(grad_d.data()),
         thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
         feature_size);
 
-    size_t temp_storage_bytes = 0;
-
     CubDebugExit(cub::DeviceRadixSort::SortPairs(
-        NULL, temp_storage_bytes,
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
-        thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
-        feature_size, 0, level + 1, s));
-
-    CubDebugExit(cub::DeviceRadixSort::SortPairs(
-        temp_bytes[circular_fid], temp_storage_bytes,
-        thrust::raw_pointer_cast(segments[circular_fid].data()),
-        thrust::raw_pointer_cast(segments_sorted[circular_fid].data()),
+        temp_bytes[circular_fid], temp_bytes_allocated[circular_fid],
+        thrust::raw_pointer_cast(node_fvalue[circular_fid].data()),
+        thrust::raw_pointer_cast(node_fvalue_sorted[circular_fid].data()),
         thrust::raw_pointer_cast(grad_sorted[circular_fid].data()),
         thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data()),
         feature_size, 0, level + 1, s));
 
     size_t offset = 0;
-    temp_storage_bytes = 0;
 
     for (size_t i = 0; i < lenght; ++i) {
       if (sparse_stat[active_fid][i] == 0)
         continue;
 
-      temp_storage_bytes = 0;
-
       CubDebugExit(cub::DeviceReduce::Sum(
-          NULL, temp_storage_bytes,
-          thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data() +
-                                   offset),
-          thrust::raw_pointer_cast(sum[circular_fid].data() + i),
-          sparse_stat[active_fid][i], s));
-
-      CubDebugExit(cub::DeviceReduce::Sum(
-          temp_bytes[circular_fid], temp_storage_bytes,
+          temp_bytes[circular_fid], temp_bytes_allocated[circular_fid],
           thrust::raw_pointer_cast(grad_sorted_sorted[circular_fid].data() +
                                    offset),
           thrust::raw_pointer_cast(sum[circular_fid].data() + i),
@@ -782,8 +789,8 @@ private:
     if (level != 0) {
       const unsigned int offset = Node::HeapOffset(level);
       const unsigned int offset_next = Node::HeapOffset(level + 1);
-      std::vector<NodeStat<sum_type>> tmp(
-          _nodeStat.size(), NodeStat<sum_type>(data->columns_sparse));
+      std::vector<NodeStat<SUM_T>> tmp(
+          _nodeStat.size(), NodeStat<SUM_T>(data->columns_sparse));
       std::copy(_nodeStat.begin(), _nodeStat.end(), tmp.begin());
 
       size_t len = 1 << (level - 1);
@@ -814,7 +821,7 @@ private:
 
 #pragma omp for simd
           for (size_t i = 0; i < data->rows; ++i) {
-            node_type node = _rowIndex2Node[i];
+            NODE_T node = _rowIndex2Node[i];
             const size_t len = data->lil_row[i].size();
 
             for (size_t j = 0; j < len; ++j) {
@@ -839,12 +846,12 @@ private:
       for (size_t i = 0; i < data->columns_sparse; ++i) {
         sparse_stat[i][0] = data->lil_column[i].size();
       }
-      sum_type sum;
+      SUM_T sum;
       init(sum);
 
 #pragma omp parallel
       {
-        sum_type sum_thread;
+        SUM_T sum_thread;
         init(sum_thread);
 #pragma omp for simd
         for (size_t i = 0; i < data->rows; ++i) {
@@ -871,7 +878,7 @@ private:
     const size_t len = 1 << level;
 
     for (size_t i = 0; i < len; ++i) {
-      const Split<sum_type> &best = _bestSplit[i];
+      const Split<SUM_T> &best = _bestSplit[i];
       tree->nodes[i + offset].threshold = best.split_value;
       tree->nodes[i + offset].split_by_true = best.split_by_true;
       tree->nodes[i + offset].fid = best.fid < 0 ? 0 : best.fid;
@@ -901,8 +908,8 @@ private:
     const unsigned int offset_1 = Node::HeapOffset(tree->depth - 2);
     const unsigned int offset = Node::HeapOffset(tree->depth - 1);
     for (unsigned int i = 0, len = (1 << (tree->depth - 2)); i < len; ++i) {
-      const Split<sum_type> &best = _bestSplit[i];
-      const NodeStat<sum_type> &stat = _nodeStat[i];
+      const Split<SUM_T> &best = _bestSplit[i];
+      const NodeStat<SUM_T> &stat = _nodeStat[i];
       tree->leaf_level[tree->ChildNode(i + offset_1, true) - offset] =
           best.LeafWeight(param) * param.eta;
       tree->leaf_level[tree->ChildNode(i + offset_1, false) - offset] =
@@ -917,12 +924,15 @@ Garden::Garden(const TreeParam &param, const Verbose &verbose,
 
 void Garden::GrowTree(io::DataMatrix *data, float *grad) {
 
+  data->Init(verbose.data);
+
   if (!_init) {
     switch (param.objective) {
     case LinearRegression: {
       auto obj = new RegressionObjective(data, param.initial_y);
 
-      if (param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT) {
+      if (data->max_reduced_size + param.depth + 1 <=
+          sizeof(unsigned char) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned char, float, double>(
@@ -932,7 +942,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned char, float, float>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned short) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned short, float, double>(
@@ -942,7 +953,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned short, float, float>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned int) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned int, float, double>(
@@ -951,17 +963,31 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
           _builder = new TaylorApproximationBuilder<unsigned int, float, float>(
               param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned long) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
-              new TaylorApproximationBuilder<unsigned long int, float, double>(
+              new TaylorApproximationBuilder<unsigned long, float, double>(
                   param, data, cfg, obj, verbose.booster);
         } else {
-          _builder = new TaylorApproximationBuilder<unsigned int, float, float>(
-              param, data, cfg, obj, verbose.booster);
+          _builder =
+              new TaylorApproximationBuilder<unsigned long, float, float>(
+                  param, data, cfg, obj, verbose.booster);
         }
-      } else
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned long long) * CHAR_BIT) {
+        if (cfg.double_precision) {
+          _builder =
+              new TaylorApproximationBuilder<unsigned long long, float, double>(
+                  param, data, cfg, obj, verbose.booster);
+        } else {
+          _builder =
+              new TaylorApproximationBuilder<unsigned long long, float, float>(
+                  param, data, cfg, obj, verbose.booster);
+        }
+      } else {
         throw "unsupported depth";
+      }
       _objective = obj;
     }
 
@@ -969,7 +995,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
     case LogisticRegression: {
       auto obj = new LogisticRegressionObjective(data, param.initial_y);
 
-      if (param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT) {
+      if (data->max_reduced_size + param.depth + 1 <=
+          sizeof(unsigned char) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned char, float2, mydouble2>(
@@ -979,7 +1006,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned char, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned short) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned short, float2, mydouble2>(
@@ -989,7 +1017,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned short, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned int) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned int, float2, mydouble2>(
@@ -999,25 +1028,39 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned int, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned long) * CHAR_BIT) {
         if (cfg.double_precision) {
-          _builder = new TaylorApproximationBuilder<unsigned long int, float2,
-                                                    mydouble2>(
-              param, data, cfg, obj, verbose.booster);
+          _builder =
+              new TaylorApproximationBuilder<unsigned long, float2, mydouble2>(
+                  param, data, cfg, obj, verbose.booster);
         } else {
           _builder =
-              new TaylorApproximationBuilder<unsigned long int, float2, float2>(
+              new TaylorApproximationBuilder<unsigned long, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned long long) * CHAR_BIT) {
+        if (cfg.double_precision) {
+          _builder =
+              new TaylorApproximationBuilder<unsigned long, float2, mydouble2>(
+                  param, data, cfg, obj, verbose.booster);
+        } else {
+          _builder = new TaylorApproximationBuilder<unsigned long long, float2,
+                                                    float2>(
+              param, data, cfg, obj, verbose.booster);
+        }
+      } else {
         throw "unsupported depth";
+      }
       _objective = obj;
     } break;
     case SoftMaxOneVsAll: {
       auto obj =
           new SoftMaxObjective(data, param.labels_count, param.initial_y);
 
-      if (param.depth + 1 <= sizeof(unsigned char) * CHAR_BIT) {
+      if (data->max_reduced_size + param.depth + 1 <=
+          sizeof(unsigned char) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned char, float2, mydouble2>(
@@ -1027,7 +1070,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned char, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned short) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned short) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned short, float2, mydouble2>(
@@ -1037,7 +1081,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned short, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned int) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned int) * CHAR_BIT) {
         if (cfg.double_precision) {
           _builder =
               new TaylorApproximationBuilder<unsigned int, float2, mydouble2>(
@@ -1047,27 +1092,36 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
               new TaylorApproximationBuilder<unsigned int, float2, float2>(
                   param, data, cfg, obj, verbose.booster);
         }
-      } else if (param.depth + 1 <= sizeof(unsigned long int) * CHAR_BIT) {
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned long) * CHAR_BIT) {
         if (cfg.double_precision) {
-          _builder = new TaylorApproximationBuilder<unsigned long int, float2,
+          _builder =
+              new TaylorApproximationBuilder<unsigned long, float2, mydouble2>(
+                  param, data, cfg, obj, verbose.booster);
+        } else {
+          _builder =
+              new TaylorApproximationBuilder<unsigned long, float2, float2>(
+                  param, data, cfg, obj, verbose.booster);
+        }
+      } else if (data->max_reduced_size + param.depth + 1 <=
+                 sizeof(unsigned long long) * CHAR_BIT) {
+        if (cfg.double_precision) {
+          _builder = new TaylorApproximationBuilder<unsigned long long, float2,
                                                     mydouble2>(
               param, data, cfg, obj, verbose.booster);
         } else {
-          _builder =
-              new TaylorApproximationBuilder<unsigned long int, float2, float2>(
-                  param, data, cfg, obj, verbose.booster);
+          _builder = new TaylorApproximationBuilder<unsigned long long, float2,
+                                                    float2>(
+              param, data, cfg, obj, verbose.booster);
         }
-      }
-
-      else
+      } else {
         throw "unsupported depth";
+      }
       _objective = obj;
     } break;
     default:
       throw "Unknown objective function " + param.objective;
     }
-
-    data->Init();
 
     auto mem_per_rec = _builder->MemoryRequirementsPerRecord();
     size_t total;
