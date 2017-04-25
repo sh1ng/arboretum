@@ -18,15 +18,14 @@ using namespace arboretum;
 
 template <class grad_type> struct Split {
   float split_value;
-  bool split_by_true;
+  unsigned int category;
   int fid;
   double gain;
   grad_type sum_grad;
   unsigned int count;
   Split() { Clean(); }
   void Clean() {
-    fid = -1;
-    split_by_true = false;
+    fid = category = (unsigned int)-1;
     gain = 0.0;
     init(sum_grad);
     count = 0;
@@ -75,17 +74,13 @@ template <class grad_type> struct NodeStat {
   unsigned int count;
   grad_type sum_grad;
   double gain;
-  std::vector<unsigned int> sparse_stat;
 
-  NodeStat(size_t sparse_features) : sparse_stat(sparse_features, 0) {
-    Clean();
-  }
+  NodeStat() { Clean(); }
 
   void Clean() {
     count = 0;
     gain = 0.0;
     init(sum_grad);
-    std::fill(sparse_stat.begin(), sparse_stat.end(), 0);
   }
 };
 
@@ -102,12 +97,12 @@ struct Node {
     return (1 << level) - 1;
   }
 
-  Node(int id) : id(id), fid(0), split_by_true(false) {}
+  Node(int id) : id(id), fid(0), category((unsigned int)-1) {}
 
   unsigned id;
   float threshold;
   unsigned int fid;
-  bool split_by_true;
+  unsigned int category;
 };
 
 struct RegTree {
@@ -156,15 +151,16 @@ struct RegTree {
 #pragma omp parallel for simd
     for (size_t i = 0; i < data->rows; ++i) {
       unsigned int node_id = 0;
+      // todo: check
       Node current_node = nodes[node_id];
       for (size_t j = 1, len = depth; j < len; ++j) {
         current_node = nodes[node_id];
         bool isLeft =
             (current_node.fid < data->columns_dense &&
              data->data[current_node.fid][i] <= current_node.threshold) ||
-            (current_node.split_by_true &&
-             std::binary_search(data->lil_row[i].begin(),
-                                data->lil_row[i].end(), current_node.fid));
+            (current_node.fid >= data->columns_dense &&
+             data->data_categories[current_node.fid - data->columns_dense][i] ==
+                 current_node.category);
 
         node_id = ChildNode(node_id, isLeft);
       }
@@ -321,8 +317,7 @@ class GardenBuilderBase {
 public:
   virtual ~GardenBuilderBase() {}
   virtual size_t MemoryRequirementsPerRecord() = 0;
-  virtual void InitGrowingTree(const size_t columns,
-                               const size_t sparse_columns) = 0;
+  virtual void InitGrowingTree(const size_t columns) = 0;
   virtual void InitTreeLevel(const int level, const size_t columns) = 0;
   virtual void GrowTree(RegTree *tree, const io::DataMatrix *data,
                         const unsigned short label) = 0;
@@ -359,7 +354,7 @@ private:
   ApproximatedObjectiveBase *_objective;
   std::vector<RegTree *> _trees;
 };
-}
-}
+} // namespace core
+} // namespace arboretum
 
 #endif // BOOSTER_H

@@ -7,9 +7,9 @@ ifeq ($(OS), Darwin)
 export CXX = clang-omp++
 endif
 
-export CC = nvcc -gencode arch=compute_61,code=sm_61
+export CC = nvcc -g -gencode arch=compute_61,code=sm_61
 export LDFLAGS= -lm
-export CFLAGS = -O3 -I_cub/ -I_json/src/ -std=c++11 -Xcompiler -fPIC -Xcompiler -O3 -Xcompiler -fopenmp -Xcompiler -Wall -Xcompiler -funroll-loops -Xcompiler -march=native -ccbin=$(CXX)
+export CFLAGS = -O1 -I_cub/ -I_json/src/ -std=c++11 -Xcompiler -fPIC -Xcompiler -O1 -Xcompiler -fopenmp -Xcompiler -Wall -Xcompiler -funroll-loops -Xcompiler -march=native -ccbin=$(CXX)
 SLIB = python-wrapper/arboretum_wrapper.so
 OBJ = io.o param.o garden.o
 

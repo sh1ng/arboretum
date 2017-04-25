@@ -5,6 +5,7 @@ from __future__ import absolute_import
 
 import os
 import ctypes
+from ctypes import *
 
 import numpy as np
 import scipy.sparse
@@ -27,7 +28,6 @@ def _load_lib():
     lib.AGetY.restype = ctypes.c_char_p
     lib.ADeleteArray.restype = ctypes.c_char_p
     lib.ASetLabel.restype = ctypes.c_char_p
-    lib.ASetCSCMatrix.restype = ctypes.c_char_p
     return lib
 
 _LIB = _load_lib()
@@ -37,17 +37,13 @@ def _call_and_throw_if_error(ret):
         raise ArboretumError(ValueError(ret))
 
 class DMatrix(object):
-    def __init__(self, data, data_csc=None, y=None, labels=None,  missing=0.0):
+    def __init__(self, data, data_category = None, y=None, labels=None,  missing=0.0):
 
         self.labels_count = 1
         self.rows = data.shape[0]
         self.columns = data.shape[1]
-        self._init_from_npy2d(data, missing)
-        if data_csc is not None:
-            print('sparse data', data_csc.shape)
-            self._add_sparse(data_csc)
+        self._init_from_npy2d(data, missing, category = data_category)
 
-        print(data.shape)
         if y is not None and labels is not None:
             raise ValueError('y and labels both are not None. Specify labels only for multi label classification')
         if y is not None:
@@ -61,31 +57,28 @@ class DMatrix(object):
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeDMatrix(self.handle))
 
-    def _add_sparse(self, csc):
-        nnz = csc.nnz
-        (rows, cols) = csc.shape
-        assert rows == self.rows
-        _call_and_throw_if_error(_LIB.ASetCSCMatrix(self.handle,
-                                            csc.indices.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-                                            csc.indptr.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-                                            ctypes.c_uint(rows),
-                                            ctypes.c_uint(cols),
-                                            ctypes.c_int(nnz)))
-
-
-    def _init_from_npy2d(self, mat, missing):
+    def _init_from_npy2d(self, mat, missing, category = None):
         if len(mat.shape) != 2:
             raise ValueError('Input numpy.ndarray must be 2 dimensional')
+        if category is not None and category.dtype not in [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32, np.int]:
+            raise ValueError('Categoty''s type must be int like')
 
         data = np.array(mat.reshape(mat.size), dtype=np.float32)
         self.handle = ctypes.c_void_p()
+        if category is None:
+            data_category = None
+            columns = 0
+        else:
+            columns = category.shape[1]
+            data_category = np.array(category.reshape(category.size), dtype=np.uint32)
 
         _call_and_throw_if_error(_LIB.ACreateFromDanseMatrix(data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+                                                             None if data_category is None else data_category.ctypes.data_as(ctypes.POINTER(ctypes.c_uint)),
                                                 ctypes.c_int(mat.shape[0]),
                                                 ctypes.c_int(mat.shape[1]),
+                                                ctypes.c_int(columns),
                                                 ctypes.c_float(missing),
                                                 ctypes.byref(self.handle)))
-
 
     def _init_y(self, y):
         data = np.array(y.reshape(self.rows), dtype=np.float32)
@@ -95,7 +88,6 @@ class DMatrix(object):
         data = np.array(labels.reshape(self.rows), dtype=np.uint8)
         _call_and_throw_if_error(_LIB.ASetLabel(self.handle,
                                             data.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))))
-
 
 class Garden(object):
     _objectives = {
