@@ -16,5 +16,5 @@
 ## Installation process
 * git clone --recursive https://github.com/sh1ng/arboretum.git
 * $ make 
-* $ cd python-wrapper
+* $ cd python-package
 * $ sudo python setup.py install
