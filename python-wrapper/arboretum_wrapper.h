@@ -12,6 +12,8 @@ extern "C" const char *ASetY(VoidPointer data, const float *y);
 
 extern "C" const char *ASetLabel(VoidPointer data, const unsigned char *labels);
 
+extern "C" const char *ASetWeights(VoidPointer data, const float *weights);
+
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *garden);
 

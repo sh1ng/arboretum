@@ -32,6 +32,7 @@ public:
   std::vector<unsigned char> labels;
   std::vector<unsigned char> reduced_size;
   std::vector<unsigned char> category_size;
+  std::vector<float> weights;
   unsigned char max_reduced_size;
   unsigned char max_category_size;
   unsigned char max_feature_size;

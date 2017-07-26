@@ -64,6 +64,20 @@ extern "C" const char *ASetLabel(VoidPointer data,
   }
 }
 
+extern "C" const char *ASetWeights(VoidPointer data, const float *weights) {
+  try {
+    DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
+    data_ptr->weights.reserve(data_ptr->rows);
+#pragma omp parallel for simd
+    for (size_t i = 0; i < data_ptr->rows; ++i) {
+      data_ptr->weights[i] = weights[i];
+    }
+    return NULL;
+  } catch (const char *error) {
+    return error;
+  }
+}
+
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *out) {
 

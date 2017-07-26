@@ -28,6 +28,7 @@ def _load_lib():
     lib.AGetY.restype = ctypes.c_char_p
     lib.ADeleteArray.restype = ctypes.c_char_p
     lib.ASetLabel.restype = ctypes.c_char_p
+    lib.ASetWeights.restype = ctypes.c_char_p
     return lib
 
 _LIB = _load_lib()
@@ -37,7 +38,7 @@ def _call_and_throw_if_error(ret):
         raise ArboretumError(ValueError(ret))
 
 class DMatrix(object):
-    def __init__(self, data, data_category = None, y=None, labels=None,  missing=0.0):
+    def __init__(self, data, data_category = None, y=None, labels=None, weights = None, missing=0.0):
 
         self.labels_count = 1
         self.rows = data.shape[0]
@@ -54,8 +55,18 @@ class DMatrix(object):
             assert data.shape[0] == len(labels)
             self._init_labels(labels)
 
+        if weights is not None:
+            assert weights.shape[0] == self.rows
+            assert weights.size == self.rows
+            self._set_weight(weights)
+
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeDMatrix(self.handle))
+
+    def _set_weight(self, weights):
+        data = np.array(weights.reshape(self.rows), dtype=np.float32)
+        _call_and_throw_if_error(_LIB.ASetWeights(self.handle,
+                                                data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
 
     def _init_from_npy2d(self, mat, missing, category = None):
         if len(mat.shape) != 2:

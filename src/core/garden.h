@@ -214,6 +214,12 @@ public:
     for (size_t i = 0; i < data->rows; ++i) {
       grad[i] = data->y_hat[i] - data->y_internal[i];
     }
+    if (data->weights.size() > 0) {
+#pragma omp parallel for simd
+      for (size_t i = 0; i < data->rows; ++i) {
+        grad[i] *= data->weights[i];
+      }
+    }
   }
 };
 
@@ -230,6 +236,12 @@ public:
       const float sigmoid = Sigmoid(data->y_internal[i]);
       grad[i].x = data->y_hat[i] - sigmoid;
       grad[i].y = sigmoid * (1.0f - sigmoid);
+    }
+    if (data->weights.size() > 0) {
+#pragma omp parallel for simd
+      for (size_t i = 0; i < data->rows; ++i) {
+        grad[i].x *= data->weights[i];
+      }
     }
   }
   virtual inline float IntoInternal(float v) override {
@@ -273,6 +285,15 @@ public:
         const double pred = labels_prob[j];
         grad[j * data->rows + i].x = label_lookup[j == label] - pred;
         grad[j * data->rows + i].y = 2.0 * pred * (1.0 - pred);
+      }
+    }
+
+    if (data->weights.size() > 0) {
+#pragma omp parallel for simd
+      for (size_t i = 0; i < data->rows; ++i) {
+        for (unsigned char j = 0; j < labels_count; ++j) {
+          grad[j * data->rows + i].x *= data->weights[i];
+        }
       }
     }
   }
@@ -347,6 +368,7 @@ public:
                std::vector<float> &out) const;
   void UpdateByLastTree(arboretum::io::DataMatrix *data);
   void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out) const;
+  const char *GetModel() const;
 
 private:
   bool _init;
