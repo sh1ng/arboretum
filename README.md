@@ -15,6 +15,7 @@
 
 ## Installation process
 * git clone --recursive https://github.com/sh1ng/arboretum.git
+* [Optional] replace __arch=compute_61,code=sm_61__ in the make file according to computational capabilities of your device 
 * $ make 
 * $ cd python-package
 * $ sudo python setup.py install
