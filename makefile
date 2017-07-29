@@ -1,4 +1,5 @@
 # compiler by default
+export sm = 610
 export CXX = g++
 OS := $(shell uname)
 
@@ -7,9 +8,11 @@ ifeq ($(OS), Darwin)
 export CXX = clang-omp++
 endif
 
-export CC = nvcc -gencode arch=compute_61,code=sm_61
+include _cub/common.mk
+
+export CC = $(NVCC) $(DEFINES) $(SM_TARGETS)
 export LDFLAGS= -lm
-export CFLAGS = -O3 -I_cub/ -I_json/src/ -std=c++11 -Xcompiler -fPIC -Xcompiler -O3 -Xcompiler -fopenmp -Xcompiler -Wall -Xcompiler -funroll-loops -Xcompiler -march=native -ccbin=$(CXX)
+export CFLAGS = $(NVCCFLAGS) -O3 -I_cub/ -I_json/src/ -std=c++11 -Xcompiler -fPIC -Xcompiler -O3 -Xcompiler -fopenmp -Xcompiler -Wall -Xcompiler -funroll-loops -Xcompiler -march=native -ccbin=$(CXX)
 SLIB = python-wrapper/arboretum_wrapper.so
 OBJ = io.o param.o garden.o
 

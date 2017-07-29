@@ -39,14 +39,16 @@ union my_atomics {
 struct GainFunctionParameters {
   const unsigned int min_leaf_size;
   const float hess;
-  const float gamma;
+  const float gamma_absolute;
+  const float gamma_relative;
   const float lambda;
   const float alpha;
   GainFunctionParameters(const unsigned int min_leaf_size, const float hess,
-                         const float gamma, const float lambda,
-                         const float alpha)
-      : min_leaf_size(min_leaf_size), hess(hess), gamma(gamma), lambda(lambda),
-        alpha(alpha) {}
+                         const float gamma_absolute, const float gamma_relative,
+                         const float lambda, const float alpha)
+      : min_leaf_size(min_leaf_size), hess(hess),
+        gamma_absolute(gamma_absolute), gamma_relative(gamma_relative),
+        lambda(lambda), alpha(alpha) {}
 };
 
 __forceinline__ __device__ unsigned long long int
@@ -85,7 +87,8 @@ gain_func(const double2 left_sum, const double2 total_sum,
     const float l = (left_sum.x * left_sum.x) / (left_sum.y + params.lambda);
     const float r = (right_sum.x * right_sum.x) / (right_sum.y + params.lambda);
     const float p = (total_sum.x * total_sum.x) / (total_sum.y + params.lambda);
-    return l + r - p;
+    const float diff = l + r - p;
+    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) * diff;
   } else {
     return 0.0;
   }
@@ -103,7 +106,8 @@ gain_func(const float2 left_sum, const float2 total_sum,
     const float l = (left_sum.x * left_sum.x) / (left_sum.y + params.lambda);
     const float r = (right_sum.x * right_sum.x) / (right_sum.y + params.lambda);
     const float p = (total_sum.x * total_sum.x) / (total_sum.y + params.lambda);
-    return l + r - p;
+    const float diff = l + r - p;
+    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) * diff;
   } else {
     return 0.0;
   }
@@ -119,7 +123,8 @@ gain_func(const float left_sum, const float total_sum, const size_t left_count,
     const float l = left_sum * left_sum / (left_count + params.lambda);
     const float r = right_sum * right_sum / (right_count + params.lambda);
     const float p = total_sum * total_sum / (total_count + params.lambda);
-    return l + r - p;
+    const float diff = l + r - p;
+    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) * diff;
   } else {
     return 0.0;
   }
@@ -136,7 +141,8 @@ gain_func(const double left_sum, const double total_sum,
     const double l = left_sum * left_sum / (left_count + params.lambda);
     const double r = right_sum * right_sum / (right_count + params.lambda);
     const double p = total_sum * total_sum / (total_count + params.lambda);
-    return l + r - p;
+    const double diff = l + r - p;
+    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) * diff;
   } else {
     return 0.0;
   }
@@ -238,7 +244,8 @@ public:
                              const bool verbose)
       : verbose(verbose), rnd(config.seed), overlap_depth(config.overlap),
         param(param), gain_param(param.min_leaf_size, param.min_child_weight,
-                                 param.gamma, param.lambda, param.alpha),
+                                 param.gamma_absolute, param.gamma_relative,
+                                 param.lambda, param.alpha),
         objective(objective) {
 
     grad_d.resize(data->rows);
@@ -640,7 +647,7 @@ private:
         _bestSplit[i].count = node_stat.count;
         _bestSplit[i].sum_grad = node_stat.sum_grad;
       }
-      }
+    }
   }
 
   template <typename NODE_VALUE_T>

@@ -28,7 +28,8 @@ public:
     int objective = cfg.value("/objective"_json_pointer, -1);
     float eta = cfg.value("/tree/eta"_json_pointer, 0.3);
     unsigned int max_depth = cfg.value("/tree/max_depth"_json_pointer, 8);
-    float gamma = cfg.value("/tree/gamma"_json_pointer, 0.0);
+    float gamma_absolute = cfg.value("/tree/gamma_absolute"_json_pointer, 0.0);
+    float gamma_relative = cfg.value("/tree/gamma_relative"_json_pointer, 0.0);
     float min_child_weight =
         cfg.value("/tree/min_child_weight"_json_pointer, 1.0);
     unsigned int min_leaf_size =
@@ -48,29 +49,31 @@ public:
         cfg.value("/tree/labels_count"_json_pointer, 1);
 
     return TreeParam((Objective)objective, max_depth, min_child_weight,
-                     min_leaf_size, colsample_bytree, colsample_bylevel, gamma,
-                     lambda, alpha, initial, eta, max_leaf_weight,
-                     scale_pos_weight, labels_count);
+                     min_leaf_size, colsample_bytree, colsample_bylevel,
+                     gamma_absolute, gamma_relative, lambda, alpha, initial,
+                     eta, max_leaf_weight, scale_pos_weight, labels_count);
   }
 
   TreeParam(Objective objective, int depth, float min_child_weight,
             unsigned int min_leaf_size, float colsample_bytre,
-            float colsample_bylevel, float gamma, float lambda, float alpha,
-            float initial_y, float eta, float max_leaf_weight,
-            float scale_pos_weight, unsigned short labels_count)
+            float colsample_bylevel, float gamma_absolute, float gamma_relative,
+            float lambda, float alpha, float initial_y, float eta,
+            float max_leaf_weight, float scale_pos_weight,
+            unsigned short labels_count)
       : objective(objective), depth(depth), min_child_weight(min_child_weight),
         min_leaf_size(min_leaf_size), colsample_bytree(colsample_bytre),
-        colsample_bylevel(colsample_bylevel), gamma(gamma), lambda(lambda),
-        alpha(alpha), initial_y(initial_y), eta(eta),
-        max_leaf_weight(max_leaf_weight), scale_pos_weight(scale_pos_weight),
-        labels_count(labels_count) {}
+        colsample_bylevel(colsample_bylevel), gamma_absolute(gamma_absolute),
+        gamma_relative(gamma_relative), lambda(lambda), alpha(alpha),
+        initial_y(initial_y), eta(eta), max_leaf_weight(max_leaf_weight),
+        scale_pos_weight(scale_pos_weight), labels_count(labels_count) {}
   const Objective objective;
   const unsigned int depth;
   const float min_child_weight;
   const unsigned int min_leaf_size;
   const float colsample_bytree;
   const float colsample_bylevel;
-  const float gamma;
+  const float gamma_absolute;
+  const float gamma_relative;
   const float lambda;
   const float alpha;
   const float initial_y;
@@ -109,7 +112,7 @@ public:
   const unsigned short overlap;
   const unsigned int seed;
 };
-}
-}
+} // namespace core
+} // namespace arboretum
 
 #endif // PARAM_H
