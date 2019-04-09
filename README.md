@@ -10,12 +10,10 @@
 ## Linux
 * gcc-5
 
-## MacOS
-* clang-omp++ can be install by brew
 
 ## Installation process
 * git clone --recursive https://github.com/sh1ng/arboretum.git
-* Edit __sm=610__ in the make file [according to computational capabilities of your device](https://developer.nvidia.com/cuda-gpus) major\*100+minor\*10
-* $ make 
-* $ cd python-package
+* Edit CmakeList.txt to specify [computational capabilities of your device](https://developer.nvidia.com/cuda-gpus) major\*100+minor\*10
+* $ mkdir build && cd build && cmake .. && make -j
+* $ cd ../python-package
 * $ sudo python setup.py install

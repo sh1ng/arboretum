@@ -8,9 +8,6 @@
 #include <cmath>
 #include <limits>
 #include <stdio.h>
-#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
-#include <thrust/system/cuda/experimental/pinned_allocator.h>
 
 namespace arboretum {
 namespace core {
@@ -171,7 +168,6 @@ struct RegTree {
   void Predict(const arboretum::io::DataMatrix *data,
                const thrust::host_vector<size_t> &row2Node,
                std::vector<float> &out) const {
-
 #pragma omp parallel for simd
     for (size_t i = 0; i < data->rows; ++i) {
       out[i + label * data->rows] += leaf_level[row2Node[i]];

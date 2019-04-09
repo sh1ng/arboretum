@@ -33,7 +33,6 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
 
 void DataMatrix::Init(bool verbose) {
   if (!_init) {
-
 #pragma omp parallel for
     for (size_t i = 0; i < columns_dense; ++i) {
       data_reduced[i].resize(rows);
