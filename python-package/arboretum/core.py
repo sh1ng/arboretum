@@ -15,7 +15,7 @@ class ArboretumError(Exception):
 
 def _load_lib():
     curr_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
-    lib_path = os.path.join(curr_path, 'arboretum_wrapper.so')
+    lib_path = os.path.join(curr_path, 'libarboretum.so')
     lib = ctypes.cdll.LoadLibrary(lib_path)
     lib.ACreateFromDanseMatrix.restype = ctypes.c_char_p
     lib.ASetY.restype = ctypes.c_char_p

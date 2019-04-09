@@ -936,17 +936,17 @@ class TaylorApproximationBuilder : public GardenBuilderBase {
       SUM_T sum;
       init(sum);
 
-#pragma omp parallel
-      {
-        SUM_T sum_thread;
-        init(sum_thread);
-#pragma omp for simd
-        for (size_t i = 0; i < data->rows; ++i) {
-          sum_thread += grad_slice[i];
-        }
-#pragma omp critical
-        { sum += sum_thread; }
-      }
+      CubDebugExit(cub::DeviceReduce::Sum(
+          this->temp_bytes[0], this->temp_bytes_allocated[0],
+          thrust::raw_pointer_cast(grad_d.data()),
+          thrust::raw_pointer_cast(this->sum[0].data()), data->rows));
+
+      CubDebugExit(cudaMemcpy(&sum,
+                              thrust::raw_pointer_cast(this->sum[0].data()),
+                              sizeof(SUM_T), cudaMemcpyDeviceToHost));
+
+      CubDebugExit(cudaDeviceSynchronize());
+
       _nodeStat[0].sum_grad = sum;
     }
 
