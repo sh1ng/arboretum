@@ -31,8 +31,26 @@ FILE(GLOB_RECURSE WRAPPER_SOURCES
     python-wrapper/*.h
     )
 
+INCLUDE_DIRECTORIES(src)
 INCLUDE_DIRECTORIES(_cub/)
 INCLUDE_DIRECTORIES(_json/src)
 
-CUDA_ADD_LIBRARY(arboretum SHARED ${GPU_SOURCES} ${WRAPPER_SOURCES} )
+CUDA_ADD_LIBRARY(arboretum SHARED ${GPU_SOURCES} ${WRAPPER_SOURCES})
+
+#============= GTest
+ADD_SUBDIRECTORY (googletest)
+enable_testing()
+INCLUDE(GoogleTest)
+include_directories(googletest/googletest/include googletest/googletest)
+
+#============= Unit Tests
+FILE(GLOB_RECURSE TEST_SOURCES
+tests/cpp/*.cu
+tests/cpp/*.cuh
+tests/cpp/*.h
+tests/cpp/*.cpp
+)
+
+CUDA_ADD_EXECUTABLE(arboretum_test ${TEST_SOURCES} ${GPU_SOURCES})
+target_link_libraries(arboretum_test gtest gtest_main)
 
