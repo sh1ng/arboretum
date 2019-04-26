@@ -1,8 +1,20 @@
 #ifndef CUDA_HELPERS_H
 #define CUDA_HELPERS_H
 
-#include "cuda_runtime.h"
+#include <stdio.h>
 #include <cmath>
+#include "cuda_helpers.h"
+#include "cuda_runtime.h"
+
+#define OK(cmd)                                               \
+  do {                                                        \
+    cudaError_t e = cmd;                                      \
+    if (e != cudaSuccess) {                                   \
+      printf("Cuda failure %s:%d '%s'\n", __FILE__, __LINE__, \
+             cudaGetErrorString(e));                          \
+      exit(EXIT_FAILURE);                                     \
+    }                                                         \
+  } while (0)
 
 inline bool _isnan(const double2 a) {
   return std::isnan(a.x) || std::isnan(a.y);
@@ -79,4 +91,14 @@ inline __host__ __device__ void init(double2 &v) { v = make_double2(0.0, 0.0); }
 
 inline __host__ __device__ void init(double &v) { v = 0.0; }
 
-#endif // CUDA_HELPERS_H
+template <class T>
+inline __host__ void compute1DInvokeConfig(size_t n, int *minGridSize,
+                                           int *blockSize, T func,
+                                           size_t dynamicSMemSize = 0,
+                                           int blockSizeLimit = 0) {
+  OK(cudaOccupancyMaxPotentialBlockSize(minGridSize, blockSize, func,
+                                        dynamicSMemSize, blockSizeLimit));
+  *minGridSize = int((n + *blockSize - 1) / *blockSize);
+}
+
+#endif  // CUDA_HELPERS_H

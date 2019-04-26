@@ -1,19 +1,20 @@
 #ifndef BOOSTER_H
 #define BOOSTER_H
 
-#include "../io/io.h"
-#include "cuda_helpers.h"
-#include "param.h"
+#include <stdio.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <stdio.h>
+#include "../io/io.h"
+#include "cuda_helpers.h"
+#include "param.h"
 
 namespace arboretum {
 namespace core {
 using namespace arboretum;
 
-template <class grad_type> struct Split {
+template <class grad_type>
+struct Split {
   float split_value;
   unsigned int category;
   int fid;
@@ -31,10 +32,8 @@ template <class grad_type> struct Split {
   inline float LeafWeight(const TreeParam &param) const {
     const float w = Split<grad_type>::LeafWeight(sum_grad, count, param);
     if (param.max_leaf_weight != 0.0f) {
-      if (w > param.max_leaf_weight)
-        return param.max_leaf_weight;
-      if (w < -param.max_leaf_weight)
-        return -param.max_leaf_weight;
+      if (w > param.max_leaf_weight) return param.max_leaf_weight;
+      if (w < -param.max_leaf_weight) return -param.max_leaf_weight;
     }
     return w;
   }
@@ -44,15 +43,13 @@ template <class grad_type> struct Split {
     const float w = Split<grad_type>::LeafWeight(parent.sum_grad - sum_grad,
                                                  parent.count - count, param);
     if (param.max_leaf_weight != 0.0f) {
-      if (w > param.max_leaf_weight)
-        return param.max_leaf_weight;
-      if (w < -param.max_leaf_weight)
-        return -param.max_leaf_weight;
+      if (w > param.max_leaf_weight) return param.max_leaf_weight;
+      if (w < -param.max_leaf_weight) return -param.max_leaf_weight;
     }
     return w;
   }
 
-private:
+ private:
   static inline float LeafWeight(const float s, const unsigned int c,
                                  const TreeParam &param) {
     return s / (c + param.lambda);
@@ -67,7 +64,8 @@ private:
   }
 };
 
-template <class grad_type> struct NodeStat {
+template <class grad_type>
+struct NodeStat {
   unsigned int count;
   grad_type sum_grad;
   double gain;
@@ -176,7 +174,7 @@ struct RegTree {
 };
 
 class ApproximatedObjectiveBase {
-public:
+ public:
   ApproximatedObjectiveBase(io::DataMatrix *data) : data(data) {}
   virtual ~ApproximatedObjectiveBase() {}
   const io::DataMatrix *data;
@@ -190,7 +188,7 @@ public:
 
 template <class grad_type>
 class ApproximatedObjective : public ApproximatedObjectiveBase {
-public:
+ public:
   ApproximatedObjective(io::DataMatrix *data)
       : ApproximatedObjectiveBase(data) {}
   thrust::host_vector<grad_type,
@@ -199,7 +197,7 @@ public:
 };
 
 class RegressionObjective : public ApproximatedObjective<float> {
-public:
+ public:
   RegressionObjective(io::DataMatrix *data, float initial_y)
       : ApproximatedObjective<float>(data) {
     grad.resize(data->rows);
@@ -220,7 +218,7 @@ public:
 };
 
 class LogisticRegressionObjective : public ApproximatedObjective<float2> {
-public:
+ public:
   LogisticRegressionObjective(io::DataMatrix *data, float initial_y)
       : ApproximatedObjective<float2>(data) {
     grad.resize(data->rows);
@@ -251,12 +249,12 @@ public:
     }
   }
 
-private:
+ private:
   inline float Sigmoid(float x) { return 1.0 / (1.0 + std::exp(-x)); }
 };
 
 class SoftMaxObjective : public ApproximatedObjective<float2> {
-public:
+ public:
   SoftMaxObjective(io::DataMatrix *data, unsigned char labels_count,
                    float initial_y)
       : ApproximatedObjective<float2>(data), labels_count(labels_count) {
@@ -313,7 +311,7 @@ public:
     }
   }
 
-private:
+ private:
   const unsigned char labels_count;
   inline float Sigmoid(float x) { return 1.0 / (1.0 + std::exp(-x)); }
 
@@ -331,9 +329,8 @@ private:
 };
 
 class GardenBuilderBase {
-public:
+ public:
   virtual ~GardenBuilderBase() {}
-  virtual size_t MemoryRequirementsPerRecord() = 0;
   virtual void InitGrowingTree(const size_t columns) = 0;
   virtual void InitTreeLevel(const int level, const size_t columns) = 0;
   virtual void GrowTree(RegTree *tree, const io::DataMatrix *data,
@@ -343,14 +340,12 @@ public:
 };
 
 class Garden {
-public:
+ public:
   Garden(const TreeParam &param, const Verbose &verbose,
          const InternalConfiguration &cfg);
   ~Garden() {
-    if (_builder)
-      delete _builder;
-    if (_objective)
-      delete _objective;
+    if (_builder) delete _builder;
+    if (_objective) delete _objective;
     for (size_t i = 0; i < _trees.size(); ++i) {
       delete _trees[i];
     }
@@ -366,13 +361,13 @@ public:
   void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out) const;
   const char *GetModel() const;
 
-private:
+ private:
   bool _init;
   GardenBuilderBase *_builder;
   ApproximatedObjectiveBase *_objective;
   std::vector<RegTree *> _trees;
 };
-} // namespace core
-} // namespace arboretum
+}  // namespace core
+}  // namespace arboretum
 
-#endif // BOOSTER_H
+#endif  // BOOSTER_H

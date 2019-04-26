@@ -1,90 +1,63 @@
 import arboretum
 import numpy as np
 from sklearn.datasets import load_boston
-import xgboost
 import json
+from sklearn.model_selection import train_test_split
 
 
 def rmse(y, y_hat):
     diff = np.power(y - y_hat, 2)
-    return np.sqrt(np.sum(diff))
-
-# load test data
-boston = load_boston()
-n = 10
-
-# create data matrix
-data = arboretum.DMatrix(boston.data[0:n], y=boston.target[0:n])
-y = boston.target[0:n]
-
-config = json.dumps({'objective':0,
-                     'internals':
-                             {
-                                 'double_precision':True
-                             },
-                     'verbose':
-{
-'gpu': True
-},
-'tree':
-{
-'eta': 1.0,
-'max_depth': 6,
-'gamma': 0.0,
-'min_child_weight': 2,
-'min_leaf_size': 2,
-'colsample_bytree': 1.0,
-'colsample_bylevel': 1.0,
-'lambda': 0.0,
-'alpha': 0.0
-}})
-
-# init model
-#model = arboretum.Garden('reg:linear', data, 6, 2, 1, 0.5)
-model = arboretum.Garden(config, data)
-
-# grow trees
-for i in range(5):
-    model.grow_tree()
-
-# predict on train data set
-pred = model.predict(data)
-
-# print first n records
-print(pred[0:10])
-
-#RMSE
-print(rmse(pred, y))
+    return np.sqrt(np.mean(diff))
 
 
-# xgboost as refernce value
-data1 = arboretum.DMatrix(boston.data[0:n], y=boston.target[0:n])
-y1 = boston.target[0:n]
+if __name__ == "__main__":
+    boston = load_boston()
 
-pred = model.predict(data1)
+    data_train, data_test, y_train,  y_test = train_test_split(
+        boston.data, boston.target, test_size=0.2, random_state=42)
 
-print(pred[0:10])
-print(rmse(pred, y1))
+    data = arboretum.DMatrix(data_train, y=y_train)
 
-mat = xgboost.DMatrix(boston.data[0:n], label=boston.target[0:n])
-param = {'max_depth':5,
-         'silent':True, 'objective':'reg:linear' }
-param['nthread'] = 1
-param['min_child_weight'] = 2
-param['colspan_by_tree'] = 1.0
-param['colspan_by_level'] = 1.0
-param['eval_metric'] = 'rmse'
-param['lambda'] = 0.0
-param['eta'] = 1.0
-param['gamma'] = 0.0
-param['alpha'] = 0.0
+    config = json.dumps({'objective': 0,
+                         'internals':
+                         {
+                             'double_precision': True
+                         },
+                         'verbose':
+                         {
+                             'gpu': True
+                         },
+                         'tree':
+                         {
+                             'eta': 1.0,
+                             'max_depth': 5,
+                             'gamma': 0.0,
+                             'min_child_weight': 2,
+                             'min_leaf_size': 2,
+                             'colsample_bytree': 1.0,
+                             'colsample_bylevel': 1.0,
+                             'lambda': 0.0,
+                             'alpha': 0.0
+                         }})
 
-model = xgboost.train(param, mat, 5)
-pred_xgb = model.predict(mat)
-print(pred_xgb[0:10])
-print(boston.target[0:10])
+    # init model
+    model = arboretum.Garden(config, data)
 
-print(rmse(pred_xgb, y))
+    # grow trees
+    for i in range(200):
+        model.grow_tree()
 
-print(np.count_nonzero(pred != pred_xgb))
-assert np.count_nonzero(pred != pred_xgb) == 0
+    # predict on train data set
+    pred_train = model.predict(data)
+
+    pred_test = model.predict(arboretum.DMatrix(data_test))
+
+    # print first n records from train set
+    print(pred_train[0:10], y_train[0:10])
+
+    # print first n records from test set
+    print(pred_test[0:10], y_test[0:10])
+
+    # RMSE
+    print('train:', rmse(pred_train, y_train),
+          'test:', rmse(pred_test, y_test))

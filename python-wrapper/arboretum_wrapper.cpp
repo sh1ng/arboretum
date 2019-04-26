@@ -1,9 +1,9 @@
 #include "arboretum_wrapper.h"
+#include <memory>
 #include "../src/core/garden.h"
 #include "../src/core/param.h"
 #include "../src/io/io.h"
 #include "stdio.h"
-#include <memory>
 
 using namespace std;
 using namespace arboretum;
@@ -80,7 +80,6 @@ extern "C" const char *ASetWeights(VoidPointer data, const float *weights) {
 
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *out) {
-
   try {
     nlohmann::json cfg = json::parse(configuration);
     const TreeParam param = TreeParam::Parse(cfg);
@@ -185,5 +184,5 @@ extern "C" const char *ADeleteArray(float *in) {
   delete[] in;
   return NULL;
 }
-} // namespace wrapper
-} // namespace arboretum
+}  // namespace wrapper
+}  // namespace arboretum
