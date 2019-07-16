@@ -1,6 +1,6 @@
 [submodule "_cub"]
 	path = _cub
-url=git@github.com:sh1ng/cub.git
+url=https://github.com/sh1ng/cub.git
 [submodule "_json"]
 	path = _json
 url=https://github.com/nlohmann/json.git
