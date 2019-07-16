@@ -79,7 +79,7 @@ struct Split {
                           const grad_type parent_sum,
                           const TreeParam &param) const {
     return Weight(parent_sum - sum_grad, parent_size - count, param);
-    }
+  }
 };
 
 template <class grad_type>
@@ -162,57 +162,66 @@ struct RegTree {
 
   void Predict(const arboretum::io::DataMatrix *data,
                thrust::host_vector<float> &out) const {
-#pragma omp parallel for simd
-    for (size_t i = 0; i < data->rows; ++i) {
-      unsigned int node_id = 0;
-      // todo: check
-      Node current_node = nodes[node_id];
-      for (size_t j = 1, len = depth; j < len; ++j) {
-        current_node = nodes[node_id];
-        bool isLeft =
-          (current_node.fid < data->columns_dense &&
-           data->data[current_node.fid][i] < current_node.threshold) ||
-          (current_node.fid >= data->columns_dense &&
-           data->data_categories[current_node.fid - data->columns_dense][i] ==
-             current_node.category);
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < data->rows; ++i) {
+        unsigned int node_id = 0;
+        // todo: check
+        Node current_node = nodes[node_id];
+        for (size_t j = 1, len = depth; j < len; ++j) {
+          current_node = nodes[node_id];
+          bool isLeft =
+            (current_node.fid < data->columns_dense &&
+             data->data[current_node.fid][i] < current_node.threshold) ||
+            (current_node.fid >= data->columns_dense &&
+             data->data_categories[current_node.fid - data->columns_dense][i] ==
+               current_node.category);
 
-        node_id = ChildNode(node_id, isLeft);
+          node_id = ChildNode(node_id, isLeft);
+        }
+        out[i + label * data->rows] += leaf_level[node_id - offset];
       }
-      out[i + label * data->rows] += leaf_level[node_id - offset];
     }
   }
 
   void PredictByQuantized(const arboretum::io::DataMatrix *data,
                           thrust::host_vector<float> &out) const {
-#pragma omp parallel for simd
-    for (size_t i = 0; i < data->rows; ++i) {
-      unsigned int node_id = 0;
-      // todo: check
-      Node current_node = nodes[node_id];
-      for (size_t j = 1, len = depth; j < len; ++j) {
-        current_node = nodes[node_id];
-        bool isLeft =
-          current_node.fid < data->columns_dense &&
-          data->data_reduced[current_node.fid][i] < current_node.quantized;
-        // FIXME: support category
-        //    ||
-        //   (current_node.fid >= data->columns_dense &&
-        //    data->data_categories[current_node.fid - data->columns_dense][i]
-        //    ==
-        //      current_node.category);
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < data->rows; ++i) {
+        unsigned int node_id = 0;
+        // todo: check
+        Node current_node = nodes[node_id];
+        for (size_t j = 1, len = depth; j < len; ++j) {
+          current_node = nodes[node_id];
+          bool isLeft =
+            current_node.fid < data->columns_dense &&
+            data->data_reduced[current_node.fid][i] < current_node.quantized;
+          // FIXME: support category
+          //    ||
+          //   (current_node.fid >= data->columns_dense &&
+          //    data->data_categories[current_node.fid - data->columns_dense][i]
+          //    ==
+          //      current_node.category);
 
-        node_id = ChildNode(node_id, isLeft);
+          node_id = ChildNode(node_id, isLeft);
+        }
+        out[i + label * data->rows] += leaf_level[node_id - offset];
       }
-      out[i + label * data->rows] += leaf_level[node_id - offset];
     }
   }
 
   void Predict(const arboretum::io::DataMatrix *data,
                const thrust::host_vector<size_t> &row2Node,
                thrust::host_vector<float> &out) const {
-#pragma omp parallel for simd
-    for (size_t i = 0; i < data->rows; ++i) {
-      out[i + label * data->rows] += leaf_level[row2Node[i]];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < data->rows; ++i) {
+        out[i + label * data->rows] += leaf_level[row2Node[i]];
+      }
     }
   }
 };

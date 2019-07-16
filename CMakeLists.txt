@@ -26,7 +26,7 @@ if (OPENMP_FOUND)
 endif()
 
 # SET(CUDA_64_BIT_DEVICE_CODE ON CACHE STRING "Compile device code in 64 bit mode" FORCE)
-SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=sm_61 -Xcompiler=-fPIC --expt-extended-lambda --default-stream per-thread")
+SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=sm_61 -std=c++11 -Xcompiler=-fPIC --expt-extended-lambda --default-stream per-thread")
 
 FILE(GLOB_RECURSE GPU_SOURCES
     src/*.cpp
@@ -44,7 +44,7 @@ FILE(GLOB_RECURSE WRAPPER_SOURCES
 
 INCLUDE_DIRECTORIES(src)
 INCLUDE_DIRECTORIES(_cub/)
-INCLUDE_DIRECTORIES(_json/src)
+INCLUDE_DIRECTORIES(_json/single_include/nlohmann)
 ADD_LIBRARY(arboretum_static STATIC ${GPU_SOURCES})
 SET_TARGET_PROPERTIES(arboretum_static PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 ADD_LIBRARY(arboretum SHARED ${WRAPPER_SOURCES})

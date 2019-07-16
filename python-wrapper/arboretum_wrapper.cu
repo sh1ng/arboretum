@@ -20,9 +20,12 @@ extern "C" const char *ACreateFromDanseMatrix(const float *data,
   try {
     DataMatrix *mat = new DataMatrix(nrow, ncol, ccol);
     const size_t size = ncol * nrow;
-#pragma omp parallel for simd
-    for (size_t i = 0; i < size; ++i) {
-      mat->data[i % ncol][i / ncol] = data[i];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < size; ++i) {
+        mat->data[i % ncol][i / ncol] = data[i];
+      }
     }
     const size_t size_cat = ccol * nrow;
     for (size_t i = 0; i < size_cat; ++i) {
@@ -39,9 +42,12 @@ extern "C" const char *ASetY(VoidPointer data, const float *y) {
   try {
     DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
     data_ptr->y_hat.resize(data_ptr->rows, 0);
-#pragma omp parallel for simd
-    for (size_t i = 0; i < data_ptr->rows; ++i) {
-      data_ptr->y_hat[i] = y[i];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < data_ptr->rows; ++i) {
+        data_ptr->y_hat[i] = y[i];
+      }
     }
     return NULL;
   } catch (const char *error) {
@@ -54,9 +60,12 @@ extern "C" const char *ASetLabel(VoidPointer data,
   try {
     DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
     data_ptr->labels.reserve(data_ptr->rows);
-#pragma omp parallel for simd
-    for (size_t i = 0; i < data_ptr->rows; ++i) {
-      data_ptr->labels[i] = labels[i];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < data_ptr->rows; ++i) {
+        data_ptr->labels[i] = labels[i];
+      }
     }
     return NULL;
   } catch (const char *error) {
@@ -68,9 +77,12 @@ extern "C" const char *ASetWeights(VoidPointer data, const float *weights) {
   try {
     DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
     data_ptr->weights.reserve(data_ptr->rows);
-#pragma omp parallel for simd
-    for (size_t i = 0; i < data_ptr->rows; ++i) {
-      data_ptr->weights[i] = weights[i];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < data_ptr->rows; ++i) {
+        data_ptr->weights[i] = weights[i];
+      }
     }
     return NULL;
   } catch (const char *error) {
@@ -120,9 +132,12 @@ extern "C" const char *APredict(VoidPointer garden, VoidPointer data,
       perror("malloc() failed");
       exit(EXIT_FAILURE);
     }
-#pragma omp parallel for simd
-    for (size_t i = 0; i < result.size(); ++i) {
-      p[i] = result[i];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < result.size(); ++i) {
+        p[i] = result[i];
+      }
     }
     *out = p;
     return NULL;
@@ -147,9 +162,12 @@ extern "C" const char *AGetY(VoidPointer garden, VoidPointer data,
       perror("malloc() failed");
       exit(EXIT_FAILURE);
     }
-#pragma omp parallel for simd
-    for (size_t i = 0; i < result.size(); ++i) {
-      p[i] = result[i];
+#pragma omp parallel
+    {
+#pragma omp for simd
+      for (size_t i = 0; i < result.size(); ++i) {
+        p[i] = result[i];
+      }
     }
     *out = p;
     return NULL;
