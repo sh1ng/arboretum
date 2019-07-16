@@ -11,6 +11,7 @@ def run_regression(depth, true_values, trees=1):
     data = arboretum.DMatrix(iris.data, labels=y)
 
     config = json.dumps({'objective': 3,
+                         'method': 0,
                          'tree':
                          {
                              'labels_count': 3,

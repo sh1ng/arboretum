@@ -15,10 +15,11 @@ def run_regression(depth, true_values, trees=1):
     data = arboretum.DMatrix(iris.data, y=y)
 
     config = json.dumps({'objective': 1,
+                         'method': 0,
                          'tree':
                          {
                              'eta': 0.2,
-                             'max_depth': 2,
+                             'max_depth': depth,
                              'gamma': 0.0,
                              'min_child_weight': 2.0,
                              'min_leaf_size': 0,
@@ -36,6 +37,9 @@ def run_regression(depth, true_values, trees=1):
 
     # predict on train data set
     pred = model.predict(data)
+    print(true_values)
+    print(pred)
+    assert np.allclose(pred, true_values)
 
 
 def test_single_tree_depth_2(): run_regression(2, [0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128,
@@ -120,4 +124,4 @@ def test_2trees_depth_2(): run_regression(2, [0.6638412, 0.6638412, 0.6638412, 0
 
 
 if __name__ == "__main__":
-    pass
+    test_single_tree_depth_3()

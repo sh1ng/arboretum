@@ -81,6 +81,7 @@ def test_category(depth, trees):
     y = boston.target
 
     config = json.dumps({'objective': 0,
+                         'method': 0,
                          'internals':
                          {
                              'double_precision': True,

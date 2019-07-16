@@ -1,10 +1,10 @@
 #ifndef IO_H
 #define IO_H
 
-#include <functional>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
+#include <functional>
 #include <vector>
 
 namespace arboretum {
@@ -12,23 +12,26 @@ namespace io {
 using namespace thrust;
 
 class DataMatrix {
-public:
+ public:
   std::vector<thrust::host_vector<
-      unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
-      data_categories;
+    unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
+    data_categories;
 
-  std::vector<std::vector<float>> data;
+  std::vector<thrust::host_vector<float>> data;
   std::vector<thrust::host_vector<
-      unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
-      data_reduced;
+    unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
+    data_reduced;
 
   std::vector<std::vector<float>> data_reduced_mapping;
 
   std::vector<thrust::device_vector<unsigned int>> data_category_device;
   std::vector<thrust::device_vector<unsigned int>> sorted_data_device;
 
-  std::vector<float> y_hat;
-  std::vector<float> y_internal;
+  thrust::host_vector<float> y_hat;
+  thrust::host_vector<float> y_internal;
+  // FIXME: store it somewhere else(model learner?)
+  thrust::device_vector<float> y_hat_d;
+  thrust::device_vector<float> y_internal_d;
   std::vector<unsigned char> labels;
   std::vector<unsigned char> reduced_size;
   std::vector<unsigned char> category_size;
@@ -40,16 +43,17 @@ public:
   size_t columns;
   size_t columns_dense;
   size_t columns_category;
-  void Init(bool verbose);
+  void InitExact(bool verbose);
+  void InitHist(int hist_size, bool verbose);
   void UpdateGrad();
   void TransferToGPU(const size_t free, bool verbose);
   DataMatrix(int rows, int columns, int columns_category);
 
-private:
+ private:
   bool _init;
   std::vector<unsigned int> SortedIndex(int column);
 };
-} // namespace io
-} // namespace arboretum
+}  // namespace io
+}  // namespace arboretum
 
-#endif // IO_H
+#endif  // IO_H

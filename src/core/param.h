@@ -1,11 +1,8 @@
 #ifndef PARAM_H
 #define PARAM_H
 
-#include "json.hpp"
-
 namespace arboretum {
 namespace core {
-using nlohmann::json;
 
 enum Objective {
   LinearRegression,
@@ -15,24 +12,28 @@ enum Objective {
   SoftMaxOptimal
 };
 
+enum Method { Exact, Hist };
+
 enum EvalMetric { RMSE, ROC_AUC };
 
-template <typename T> struct ThreadSpecific {
+template <typename T>
+struct ThreadSpecific {
   T data;
   int thread;
 };
 
 struct TreeParam {
-public:
-  static TreeParam Parse(const json &cfg);
+ public:
+  static TreeParam Parse(const char *configuration);
 
-  TreeParam(Objective objective, int depth, float min_child_weight,
-            unsigned int min_leaf_size, float colsample_bytre,
-            float colsample_bylevel, float gamma_absolute, float gamma_relative,
-            float lambda, float alpha, float initial_y, float eta,
-            float max_leaf_weight, float scale_pos_weight,
-            unsigned short labels_count);
-
+  TreeParam(Method method, Objective objective, int depth,
+            float min_child_weight, unsigned int min_leaf_size,
+            float colsample_bytre, float colsample_bylevel,
+            float gamma_absolute, float gamma_relative, float lambda,
+            float alpha, float initial_y, float eta, float max_leaf_weight,
+            float scale_pos_weight, unsigned short labels_count,
+            unsigned hist_size);
+  const Method method;
   const Objective objective;
   const unsigned int depth;
   const float min_child_weight;
@@ -48,32 +49,34 @@ public:
   const float max_leaf_weight;
   const float scale_pos_weight;
   const unsigned char labels_count;
+  const unsigned hist_size;
 };
 
 struct Verbose {
-public:
-  static Verbose Parse(const json &cfg) {
-    return Verbose(cfg.value("/verbose/gpu"_json_pointer, false),
-                   cfg.value("/verbose/booster"_json_pointer, false),
-                   cfg.value("/verbose/data"_json_pointer, false));
-  }
-  Verbose(bool gpu, bool booster, bool data)
-      : gpu(gpu), booster(booster), data(data) {}
+ public:
+  static Verbose Parse(const char *configuration);
+  Verbose(bool gpu, bool booster, bool data);
   const bool gpu;
   const bool booster;
   const bool data;
 };
 
 struct InternalConfiguration {
-public:
-  static InternalConfiguration Parse(const json &cfg);
-  InternalConfiguration(bool double_precision, unsigned short overlap,
-                        unsigned int seed);
+ public:
+  static InternalConfiguration Parse(const char *configuration);
+  InternalConfiguration(bool double_precision = false,
+                        unsigned short overlap = 2, unsigned int seed = 0,
+                        bool use_hist_subtraction_trick = true,
+                        bool dynamic_parallelism = false,
+                        bool upload_features = true);
   const bool double_precision;
   const unsigned short overlap;
   const unsigned int seed;
+  const bool use_hist_subtraction_trick;
+  const bool dynamic_parallelism;
+  const bool upload_features;
 };
-} // namespace core
-} // namespace arboretum
+}  // namespace core
+}  // namespace arboretum
 
-#endif // PARAM_H
+#endif  // PARAM_H

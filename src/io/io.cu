@@ -1,19 +1,27 @@
 //#include <omp.h>
-#include "io.h"
+#include <thrust/sort.h>
+#include <thrust/system/cuda/experimental/pinned_allocator.h>
+#include <thrust/unique.h>
 #include <algorithm>
 #include <functional>
-#include <thrust/system/cuda/experimental/pinned_allocator.h>
 #include <unordered_set>
 #include <vector>
+#include "io.h"
 
 namespace arboretum {
 namespace io {
 using namespace std;
 
 DataMatrix::DataMatrix(int rows, int columns, int columns_category)
-    : rows(rows), columns(columns + columns_category), columns_dense(columns),
+    : rows(rows),
+      columns(columns + columns_category),
+      columns_dense(columns),
       columns_category(columns_category) {
   _init = false;
+  y_hat_d.reserve(rows);
+  y_internal_d.reserve(rows);
+  y_hat.reserve(rows);
+  y_internal.reserve(rows);
   data.resize(columns);
   data_category_device.resize(columns_category);
   sorted_data_device.resize(columns);
@@ -31,23 +39,64 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
   }
 }
 
-void DataMatrix::Init(bool verbose) {
+void DataMatrix::InitHist(int hist_size, bool verbose) {
+  if (!_init) {
+    thrust::host_vector<thrust::host_vector<float>> thresholds(columns_dense);
+    for (size_t i = 0; i < columns_dense; ++i) {
+      thresholds[i].resize(hist_size, std::numeric_limits<float>::infinity());
+      thrust::device_vector<float> d_data = data[i];
+      thrust::sort(d_data.begin(), d_data.end());
+
+      auto n = thrust::unique(d_data.begin(), d_data.end());
+      int size = std::min(static_cast<int>(n - d_data.begin()), hist_size);
+      reduced_size[i] = 32 - __builtin_clz(size);
+      data_reduced_mapping[i].resize(size);
+      for (auto j = 0; j < size - 1; ++j) {
+        auto offset = (j + 1) * (n - d_data.begin()) / size;
+        thresholds[i][j] = (d_data[offset] + d_data[offset - 1]) * 0.5;
+      }
+
+      data_reduced_mapping[i].assign(thresholds[i].begin(),
+                                     thresholds[i].end());
+    }
+#pragma omp parallel for
+    for (size_t i = 0; i < columns_dense; ++i) {
+      data_reduced[i].resize(rows);
+      for (size_t j = 0; j < rows; ++j) {
+        vector<float>::iterator indx =
+          std::lower_bound(data_reduced_mapping[i].begin(),
+                           data_reduced_mapping[i].end(), data[i][j]);
+        unsigned int idx = indx - data_reduced_mapping[i].begin();
+        data_reduced[i][j] = idx;
+      }
+    }
+    for (size_t i = 0; i < columns_dense && verbose; ++i) {
+      printf("feature %lu has been reduced to %u bits \n", i, reduced_size[i]);
+    }
+    max_reduced_size = max_feature_size =
+      *std::max_element(reduced_size.begin(), reduced_size.end());
+    if (verbose) printf("max feature size %u \n", max_reduced_size);
+
+    this->_init = true;
+  }
+}
+
+void DataMatrix::InitExact(bool verbose) {
   if (!_init) {
 #pragma omp parallel for
     for (size_t i = 0; i < columns_dense; ++i) {
       data_reduced[i].resize(rows);
 
       std::unordered_set<float> s;
-      for (float v : data[i])
-        s.insert(v);
+      for (float v : data[i]) s.insert(v);
       data_reduced_mapping[i].assign(s.begin(), s.end());
       std::sort(data_reduced_mapping[i].begin(), data_reduced_mapping[i].end());
       reduced_size[i] = 32 - __builtin_clz(data_reduced_mapping[i].size());
 
       for (size_t j = 0; j < rows; ++j) {
         vector<float>::iterator indx =
-            std::lower_bound(data_reduced_mapping[i].begin(),
-                             data_reduced_mapping[i].end(), data[i][j]);
+          std::lower_bound(data_reduced_mapping[i].begin(),
+                           data_reduced_mapping[i].end(), data[i][j]);
         unsigned int idx = indx - data_reduced_mapping[i].begin();
         data_reduced[i][j] = idx;
       }
@@ -55,8 +104,8 @@ void DataMatrix::Init(bool verbose) {
 
 #pragma omp parallel for
     for (size_t i = 0; i < columns_category; ++i) {
-      unsigned int m = *std::max_element(data_categories[i].begin(),
-                                         data_categories[i].end());
+      unsigned int m =
+        *std::max_element(data_categories[i].begin(), data_categories[i].end());
       category_size[i] = 32 - __builtin_clz(m);
     }
 
@@ -64,15 +113,14 @@ void DataMatrix::Init(bool verbose) {
       printf("feature %lu has been reduced to %u bits \n", i, reduced_size[i]);
     }
     max_reduced_size =
-        *std::max_element(reduced_size.begin(), reduced_size.end());
-    if (verbose)
-      printf("max feature size %u \n", max_reduced_size);
+      *std::max_element(reduced_size.begin(), reduced_size.end());
+    if (verbose) printf("max feature size %u \n", max_reduced_size);
 
     if (columns_category == 0)
       max_feature_size = max_reduced_size;
     else {
       max_category_size =
-          *std::max_element(category_size.begin(), category_size.end());
+        *std::max_element(category_size.begin(), category_size.end());
       max_feature_size = std::max(max_reduced_size, max_category_size);
     }
     _init = true;
@@ -110,5 +158,5 @@ void DataMatrix::TransferToGPU(size_t free, bool verbose) {
     printf("copied category features %ld from %ld \n", copy_count,
            columns_category);
 }
-} // namespace io
-} // namespace arboretum
+}  // namespace io
+}  // namespace arboretum

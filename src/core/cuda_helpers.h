@@ -3,8 +3,9 @@
 
 #include <stdio.h>
 #include <cmath>
-#include "cuda_helpers.h"
 #include "cuda_runtime.h"
+
+#define MAX_THREADS 1024
 
 #define OK(cmd)                                               \
   do {                                                        \
@@ -15,6 +16,33 @@
       exit(EXIT_FAILURE);                                     \
     }                                                         \
   } while (0)
+
+#define DEVICE_OK(cmd)                                                  \
+  do {                                                                  \
+    cudaError_t e = cmd;                                                \
+    if (e != cudaSuccess) {                                             \
+      printf("Cuda failure in kernel %s:%d '%s'\n", __FILE__, __LINE__, \
+             cudaGetErrorString(e));                                    \
+      assert(0);                                                        \
+    }                                                                   \
+  } while (0)
+
+inline __host__ __device__ float to_float(float f) { return f; }
+
+inline __host__ __device__ float to_float(double f) { return float(f); }
+
+inline __host__ __device__ float to_float(float2 f) { return float(f.x); }
+
+inline __host__ __device__ float to_float(double2 f) { return float(f.x); }
+
+
+inline __host__ __device__ float to_float_y(float f) { return 0; }
+
+inline __host__ __device__ float to_float_y(double f) { return 0; }
+
+inline __host__ __device__ float to_float_y(float2 f) { return float(f.y); }
+
+inline __host__ __device__ float to_float_y(double2 f) { return float(f.y); }
 
 inline bool _isnan(const double2 a) {
   return std::isnan(a.x) || std::isnan(a.y);
@@ -90,6 +118,21 @@ inline __host__ __device__ void operator+=(double2 &a, float2 b) {
 inline __host__ __device__ void init(double2 &v) { v = make_double2(0.0, 0.0); }
 
 inline __host__ __device__ void init(double &v) { v = 0.0; }
+
+__forceinline__ __device__ void atomicAdd(float2 *address, const float2 val) {
+  atomicAdd(&(address->x), val.x);
+  atomicAdd(&(address->y), val.y);
+}
+
+__forceinline__ __device__ void atomicAdd(double2 *address, const double2 val) {
+  atomicAdd(&(address->x), val.x);
+  atomicAdd(&(address->y), val.y);
+}
+
+inline __host__ __device__ void print_grad(double &v) {}
+inline __host__ __device__ void print_grad(double2 &v) {}
+inline __host__ __device__ void print_grad(float &v) {}
+inline __host__ __device__ void print_grad(float2 &v) {}
 
 template <class T>
 inline __host__ void compute1DInvokeConfig(size_t n, int *minGridSize,

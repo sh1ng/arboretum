@@ -1,3 +1,4 @@
 BasedOnStyle: Google
 IndentCaseLabels: true
 NamespaceIndentation: None
+ContinuationIndentWidth: 2

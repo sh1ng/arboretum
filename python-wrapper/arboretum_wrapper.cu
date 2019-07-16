@@ -1,8 +1,8 @@
-#include "arboretum_wrapper.h"
 #include <memory>
 #include "../src/core/garden.h"
 #include "../src/core/param.h"
 #include "../src/io/io.h"
+#include "arboretum_wrapper.h"
 #include "stdio.h"
 
 using namespace std;
@@ -38,7 +38,7 @@ extern "C" const char *ACreateFromDanseMatrix(const float *data,
 extern "C" const char *ASetY(VoidPointer data, const float *y) {
   try {
     DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
-    data_ptr->y_hat.reserve(data_ptr->rows);
+    data_ptr->y_hat.resize(data_ptr->rows, 0);
 #pragma omp parallel for simd
     for (size_t i = 0; i < data_ptr->rows; ++i) {
       data_ptr->y_hat[i] = y[i];
@@ -81,10 +81,9 @@ extern "C" const char *ASetWeights(VoidPointer data, const float *weights) {
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *out) {
   try {
-    nlohmann::json cfg = json::parse(configuration);
-    const TreeParam param = TreeParam::Parse(cfg);
-    const Verbose verbose = Verbose::Parse(cfg);
-    const InternalConfiguration c = InternalConfiguration::Parse(cfg);
+    const TreeParam param = TreeParam::Parse(configuration);
+    const Verbose verbose = Verbose::Parse(configuration);
+    const InternalConfiguration c = InternalConfiguration::Parse(configuration);
     Garden *source = new Garden(param, verbose, c);
     *out = static_cast<VoidPointer>(source);
     return NULL;
