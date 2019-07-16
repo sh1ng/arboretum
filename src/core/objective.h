@@ -35,12 +35,9 @@ class ApproximatedObjectiveBase {
   virtual float IntoInternal(float v) { return v; }
   virtual inline void FromInternal(thrust::host_vector<float> &in,
                                    std::vector<float> &out) {
-#pragma omp parallel
-    {
-#pragma omp for simd
-      for (size_t i = 0; i < out.size(); ++i) {
-        out[i] = in[i];
-      }
+#pragma omp parallel for
+    for (size_t i = 0; i < out.size(); ++i) {
+      out[i] = in[i];
     }
   }
 };
@@ -74,12 +71,9 @@ class LogisticRegressionObjective : public ApproximatedObjective<float2> {
   }
   virtual inline void FromInternal(thrust::host_vector<float> &in,
                                    std::vector<float> &out) override {
-#pragma omp parallel
-    {
-#pragma omp for simd
-      for (size_t i = 0; i < out.size(); ++i) {
-        out[i] = Sigmoid(in[i]);
-      }
+#pragma omp parallel for
+    for (size_t i = 0; i < out.size(); ++i) {
+      out[i] = Sigmoid(in[i]);
     }
   }
 
@@ -98,21 +92,18 @@ class SoftMaxObjective : public ApproximatedObjective<float2> {
   virtual inline void FromInternal(thrust::host_vector<float> &in,
                                    std::vector<float> &out) override {
     const size_t n = in.size() / labels_count;
-#pragma omp parallel
-    {
-#pragma omp for simd
-      for (size_t i = 0; i < n; ++i) {
-        std::vector<double> labels_prob(labels_count);
+#pragma omp parallel for
+    for (size_t i = 0; i < n; ++i) {
+      std::vector<double> labels_prob(labels_count);
 
-        for (unsigned char j = 0; j < labels_count; ++j) {
-          labels_prob[j] = in[i + n * j];
-        }
+      for (unsigned char j = 0; j < labels_count; ++j) {
+        labels_prob[j] = in[i + n * j];
+      }
 
-        SoftMax(labels_prob);
+      SoftMax(labels_prob);
 
-        for (unsigned char j = 0; j < labels_count; ++j) {
-          out[i * labels_count + j] = labels_prob[j];
-        }
+      for (unsigned char j = 0; j < labels_count; ++j) {
+        out[i * labels_count + j] = labels_prob[j];
       }
     }
   }
