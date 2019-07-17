@@ -26,7 +26,7 @@ if (OPENMP_FOUND)
 endif()
 
 # SET(CUDA_64_BIT_DEVICE_CODE ON CACHE STRING "Compile device code in 64 bit mode" FORCE)
-SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=sm_61 -std=c++11 -Xcompiler=-fPIC --expt-extended-lambda --default-stream per-thread")
+SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_70,code=sm_70 -std=c++11 -Xcompiler=-fPIC --expt-extended-lambda --default-stream per-thread")
 
 FILE(GLOB_RECURSE GPU_SOURCES
     src/*.cpp
