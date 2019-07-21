@@ -1,5 +1,6 @@
 #include "core/best_splits.h"
 #include "core/builder.h"
+#include "core/hist_tree_grower.h"
 #include "core/histogram.h"
 #include "core/param.h"
 #include "gtest/gtest.h"

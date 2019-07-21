@@ -1,4 +1,5 @@
 #include "core/builder.h"
+#include "core/continuous_tree_grower.h"
 #include "gtest/gtest.h"
 #include "io/io.h"
 #include "test_utils.h"

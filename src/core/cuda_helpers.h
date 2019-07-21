@@ -2,6 +2,7 @@
 #define CUDA_HELPERS_H
 
 #include <stdio.h>
+#include <cassert>
 #include <cmath>
 #include "cuda_runtime.h"
 
@@ -34,7 +35,6 @@ inline __host__ __device__ float to_float(double f) { return float(f); }
 inline __host__ __device__ float to_float(float2 f) { return float(f.x); }
 
 inline __host__ __device__ float to_float(double2 f) { return float(f.x); }
-
 
 inline __host__ __device__ float to_float_y(float f) { return 0; }
 

@@ -8,10 +8,11 @@
 #include <limits>
 #include <random>
 #include "best_splits.h"
-#include "builder.h"
+#include "continuous_tree_grower.h"
 #include "cub/cub.cuh"
 #include "cuda_helpers.h"
 #include "garden.h"
+#include "hist_tree_grower.h"
 #include "histogram.h"
 #include "objective.h"
 #include "param.h"

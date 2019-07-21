@@ -1,4 +1,6 @@
 #include "core/builder.h"
+#include "core/hist_grad_sum.cuh"
+#include "core/hist_tree_grower.h"
 #include "gtest/gtest.h"
 #include "test_utils.h"
 #include "thrust/device_vector.h"
