@@ -1,5 +1,5 @@
-#ifndef CUDA_HELPERS_H
-#define CUDA_HELPERS_H
+#ifndef SRC_CORE_CUDA_HELPERS_H
+#define SRC_CORE_CUDA_HELPERS_H
 
 #include <stdio.h>
 #include <cassert>
@@ -27,6 +27,24 @@
       assert(0);                                                        \
     }                                                                   \
   } while (0)
+
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
+__device__ __forceinline__ double atomicAdd(double *address, double val) {
+  unsigned long long int *address_as_ull = (unsigned long long int *)address;
+  unsigned long long int old = *address_as_ull, assumed;
+
+  do {
+    assumed = old;
+    old = atomicCAS(address_as_ull, assumed,
+                    __double_as_longlong(val + __longlong_as_double(assumed)));
+
+    // Note: uses integer comparison to avoid hang in case of NaN (since NaN !=
+    // NaN)
+  } while (assumed != old);
+
+  return __longlong_as_double(old);
+}
+#endif
 
 inline __host__ __device__ float to_float(float f) { return f; }
 
@@ -144,4 +162,4 @@ inline __host__ void compute1DInvokeConfig(size_t n, int *minGridSize,
   *minGridSize = int((n + *blockSize - 1) / *blockSize);
 }
 
-#endif  // CUDA_HELPERS_H
+#endif  // SRC_CORE_CUDA_HELPERS_H
