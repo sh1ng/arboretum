@@ -326,7 +326,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     if (!partition_only) {
       const unsigned length = 1 << level;
 
-      //   OK(cudaStreamSynchronize(growers[circular_fid]->stream));
+      OK(cudaStreamSynchronize(growers[circular_fid]->stream));
 
       growers[circular_fid]->FindBest(
         this->best, this->row2Node, this->best.parent_node_sum,
