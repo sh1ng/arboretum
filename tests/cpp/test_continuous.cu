@@ -50,6 +50,8 @@ TEST(ContinuousTreeGrower, RootSearchContinuousFeature) {
   const size_t size = 32;
   auto grower = ContinuousTreeGrower<unsigned int, float2, float2>(size, 1, 0);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
+
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -71,7 +73,7 @@ TEST(ContinuousTreeGrower, RootSearchContinuousFeature) {
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
     parent_node_count, 3, 0, 1, p, false);
   TEST_OK(cudaStreamSynchronize(grower.stream));
@@ -83,10 +85,13 @@ TEST(ContinuousTreeGrower, RootSearchContinuousFeature) {
 }
 
 TEST(ContinuousTreeGrower, FloatUnstableExample) {
+  const unsigned level = 1;
+  const unsigned depth = 4;
   const size_t size = 10;
   auto grower =
     ContinuousTreeGrower<unsigned int, float, float>(size, 4, 0, NULL);
   thrust::host_vector<unsigned int> node(size, 0);
+  thrust::device_vector<unsigned> partitioning_indexes(size, 0);
   thrust::host_vector<float> grad(size);
   thrust::host_vector<unsigned int> feature(size);
 
@@ -139,10 +144,13 @@ TEST(ContinuousTreeGrower, FloatUnstableExample) {
 
   thrust::device_vector<unsigned> feature_d = feature;
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    node, grad, thrust::raw_pointer_cast(feature_d.data()),
+    partitioning_indexes, node, grad, feature_d,
     thrust::raw_pointer_cast(feature.data()), parent_node_sum,
-    parent_node_count, 3, 1, 4, p, false);
+    parent_node_count, 3, level, depth, p, false);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
@@ -155,8 +163,11 @@ TEST(ContinuousTreeGrower, FloatUnstableExample) {
 }
 
 TEST(ContinuousTreeGrower, DoubleUnstableExample) {
+  const unsigned level = 1;
+  const unsigned depth = 2;
   const size_t size = 10;
   auto grower = ContinuousTreeGrower<unsigned int, float, double>(size, 4, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::host_vector<unsigned int> node(size, 0);
   thrust::host_vector<float> grad(size);
   thrust::host_vector<unsigned int> feature(size);
@@ -208,8 +219,11 @@ TEST(ContinuousTreeGrower, DoubleUnstableExample) {
 
   thrust::device_vector<unsigned> feature_d = feature;
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    node, grad, thrust::raw_pointer_cast(feature_d.data()),
+    partitioning_indexes, node, grad, feature_d,
     thrust::raw_pointer_cast(feature.data()), parent_node_sum,
     parent_node_count, 3, 1, 4, p, false);
   TEST_OK(cudaStreamSynchronize(grower.stream));
@@ -224,9 +238,13 @@ TEST(ContinuousTreeGrower, DoubleUnstableExample) {
 }
 
 TEST(ContinuousTreeGrower, Level1SearchContinuousFeature) {
+  const unsigned level = 1;
+  const unsigned depth = 2;
   const size_t size = 32;
-  auto grower = ContinuousTreeGrower<unsigned int, float2, float2>(size, 2, 0);
+  auto grower =
+    ContinuousTreeGrower<unsigned int, float2, float2>(size, depth, 0);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -251,10 +269,12 @@ TEST(ContinuousTreeGrower, Level1SearchContinuousFeature) {
 
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, row2Node,
+                                   parent_node_count, level, depth);
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
-    parent_node_count, 3, 1, 2, p, false);
+    parent_node_count, 3, level, depth, p, false);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
@@ -300,10 +320,13 @@ TEST(ContinuousTreeGrower, Level1SearchContinuousFeature) {
 }
 
 TEST(ContinuousTreeGrower, Level1SearchContinuousFeatureDouble) {
+  const unsigned level = 1;
+  const unsigned depth = 2;
   const size_t size = 32;
   auto grower =
-    ContinuousTreeGrower<unsigned int, float2, mydouble2>(size, 2, 0);
+    ContinuousTreeGrower<unsigned int, float2, mydouble2>(size, depth, 0);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -329,10 +352,13 @@ TEST(ContinuousTreeGrower, Level1SearchContinuousFeatureDouble) {
 
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, row2Node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
-    parent_node_count, 3, 1, 2, p, false);
+    parent_node_count, 3, level, depth, p, false);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
@@ -375,38 +401,6 @@ TEST(ContinuousTreeGrower, Level1SearchContinuousFeatureDouble) {
   ASSERT_EQ(grower.node_fvalue[29], 1);
   ASSERT_EQ(grower.node_fvalue[30], 0);
   ASSERT_EQ(grower.node_fvalue[31], 0);
-}
-
-TEST(ContinuousTreeGrower, PartitionLevel1) {
-  const size_t size = 32;
-  auto grower = ContinuousTreeGrower<unsigned int, float2, float2>(size, 2, 0);
-  thrust::device_vector<float2> grad(size, make_float2(0, 0));
-  thrust::device_vector<unsigned> row2Node(size, 0);
-  thrust::device_vector<unsigned> parent_node_count(3, 0);
-  parent_node_count[1] = 16;
-  parent_node_count[2] = size;
-
-  for (size_t i = 0; i < grad.size(); i++) {
-    row2Node[i] = i % 2;
-    grad[i] = make_float2(float(i), 1.0);
-  }
-
-  grower.Partition(thrust::raw_pointer_cast(grad.data()),
-                   thrust::raw_pointer_cast(row2Node.data()), parent_node_count,
-                   1, 2);
-  TEST_OK(cudaStreamSynchronize(grower.stream));
-
-  thrust::host_vector<float2> grad_h = grad;
-
-  for (size_t i = 0; i < size / 2; i++) {
-    ASSERT_FLOAT_EQ(grad_h[i].x, float(i * 2));
-    ASSERT_FLOAT_EQ(grad_h[i].y, float(1));
-  }
-  for (size_t i = size / 2; i < size; i++) {
-    float g = float((size - i) * 2 - 1);
-    ASSERT_FLOAT_EQ(grad_h[i].x, g);
-    ASSERT_FLOAT_EQ(grad_h[i].y, float(1));
-  }
 }
 
 TEST(ContinuousTreeGrower, ApplySplitLevel0) {
@@ -474,33 +468,6 @@ TEST(ContinuousTreeGrower, ApplySplitLevel1) {
 
   for (int i = 7; i < size; ++i) {
     ASSERT_EQ(nodes[i], 3);
-  }
-}
-
-TEST(ContinuousTreeGrower, PartitioningLevel1) {
-  const size_t size = 32;
-  auto grower = ContinuousTreeGrower<unsigned int, float, float>(size, 2, 0);
-  thrust::device_vector<unsigned int> row2Node(size, 0);
-  thrust::device_vector<float> src(size);
-  thrust::device_vector<unsigned> counts(3);
-  counts[0] = 0;
-  counts[1] = size / 2;
-  counts[2] = size;
-
-  for (size_t i = 0; i < size; i++) {
-    row2Node[i] = i % 2;
-    src[i] = float(i);
-  }
-
-  grower.Partition(thrust::raw_pointer_cast(src.data()),
-                   thrust::raw_pointer_cast(row2Node.data()), counts, 1, 2);
-  TEST_OK(cudaStreamSynchronize(grower.stream));
-  thrust::host_vector<float> src_h = src;
-
-  for (size_t i = 0; i < size / 2; i++) {
-    ASSERT_FLOAT_EQ(src_h[i], float(i * 2)) << "at" << i;
-    ASSERT_FLOAT_EQ(src_h[i + size / 2], float(size - 1 - 2 * i))
-      << "at" << i + size / 2;
   }
 }
 }  // namespace arboretum_test

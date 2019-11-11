@@ -79,20 +79,17 @@ InternalConfiguration InternalConfiguration::Parse(const char *configuration) {
     cfg.value("/internals/compute_overlap"_json_pointer, 2),
     cfg.value("/internals/seed"_json_pointer, 0),
     cfg.value("/internals/use_hist_subtraction_trick"_json_pointer, true),
-    cfg.value("/internals/dynamic_parallelism"_json_pointer, false),
     cfg.value("/internals/upload_features"_json_pointer, true));
 }
 InternalConfiguration::InternalConfiguration(bool double_precision,
                                              unsigned short overlap,
                                              unsigned int seed,
                                              bool use_hist_subtraction_trick,
-                                             bool dynamic_parallelism,
                                              bool upload_features)
     : double_precision(double_precision),
       overlap(overlap),
       seed(seed),
       use_hist_subtraction_trick(use_hist_subtraction_trick),
-      dynamic_parallelism(dynamic_parallelism),
       upload_features(upload_features) {}
 }  // namespace core
 }  // namespace arboretum

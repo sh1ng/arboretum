@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <cassert>
 #include <cmath>
+#include "cub/cub.cuh"
 #include "cuda_runtime.h"
 
 #define MAX_THREADS 1024
@@ -119,6 +120,10 @@ inline __host__ __device__ double2 operator+(const double2 a, const double2 b) {
   return make_double2(a.x + b.x, a.y + b.y);
 }
 
+inline __host__ __device__ uint2 operator+(const uint2 a, const uint2 b) {
+  return make_uint2(a.x + b.x, a.y + b.y);
+}
+
 // inline __host__ __device__ double2 operator=(float2 b) {
 //  return make_double2(b.x, b.y);
 //}
@@ -160,6 +165,43 @@ inline __host__ void compute1DInvokeConfig(size_t n, int *minGridSize,
   OK(cudaOccupancyMaxPotentialBlockSize(minGridSize, blockSize, func,
                                         dynamicSMemSize, blockSizeLimit));
   *minGridSize = int((n + *blockSize - 1) / *blockSize);
+}
+
+template <class T>
+__forceinline__ __host__ __device__ T linear_search(const T *sorted_segments,
+                                                    const T item, const T size,
+                                                    const T start = 0) {
+  T segment = start;
+  while ((item >= sorted_segments[segment + 1])) {
+    segment++;
+  }
+  return segment;
+}
+
+template <class T>
+__forceinline__ __host__ __device__ T linear_search_2steps(
+  const T *sorted_segments, const T item, const T size, const T start = 0) {
+  T segment = start;
+  if (item >= sorted_segments[segment + 1]) {
+    return segment + 1;
+  }
+  return segment;
+}
+
+template <class T>
+__forceinline__ __host__ __device__ T binary_search(const T *sorted_segments,
+                                                    const T item,
+                                                    const T size) {
+  T left = 0;
+  T right = size - 1;
+  while (left < right) {
+    T m = (left + right) / 2;
+    if (sorted_segments[m] > item)
+      right = m;
+    else
+      left = m + 1;
+  }
+  return left - 1;
 }
 
 #endif  // SRC_CORE_CUDA_HELPERS_H

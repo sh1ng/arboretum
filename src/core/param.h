@@ -67,13 +67,11 @@ struct InternalConfiguration {
   InternalConfiguration(bool double_precision = false,
                         unsigned short overlap = 2, unsigned int seed = 0,
                         bool use_hist_subtraction_trick = true,
-                        bool dynamic_parallelism = false,
                         bool upload_features = true);
   const bool double_precision;
   const unsigned short overlap;
   const unsigned int seed;
   const bool use_hist_subtraction_trick;
-  const bool dynamic_parallelism;
   const bool upload_features;
 };
 }  // namespace core

@@ -13,6 +13,7 @@
 #include "cuda_runtime.h"
 #include "histogram.h"
 #include "param.h"
+#include "partition.cuh"
 
 namespace arboretum {
 namespace core {
@@ -65,15 +66,13 @@ __forceinline__ __device__ unsigned long long int updateAtomicMax(
   return loctest.ulong;
 }
 
-template <class T1, class T2>
-__global__ void gather_kernel(const unsigned int *const __restrict__ position,
-                              const T1 *const __restrict__ in1, T1 *out1,
-                              const T2 *const __restrict__ in2, T2 *out2,
-                              const size_t n) {
+template <class T1>
+__global__ void scatter_kernel(const unsigned int *const __restrict__ position,
+                               const T1 *const __restrict__ in, T1 *out,
+                               const size_t n) {
   for (size_t i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
-    out1[i] = in1[position[i]];
-    out2[i] = in2[position[i]];
+    out[position[i]] = in[i];
   }
 }
 
@@ -288,7 +287,7 @@ class BaseGrower {
                           gain_kernel<SUM_T, NODE_T>);
 
     compute1DInvokeConfig(size, &gridSizeGather, &blockSizeGather,
-                          gather_kernel<NODE_T, float>);
+                          scatter_kernel<NODE_T>);
 
     PartitioningLeafs<NODE_T> conversion_op(0);
 
@@ -320,8 +319,21 @@ class BaseGrower {
 
     temp_bytes_allocated = std::max(temp_bytes_allocated, temp_storage_bytes);
 
+    temp_storage_bytes = 0;
+
+    const SegmentedInputIterator<const NODE_T *> input_iter((NODE_T *)nullptr,
+                                                            0);
+    PartitioningIterator<GRAD_T> out_iter(
+      (unsigned *)nullptr, (GRAD_T *)nullptr, (GRAD_T *)nullptr, 0);
+
+    OK(cub::DeviceScan::InclusiveScan(NULL, temp_storage_bytes, input_iter,
+                                      out_iter, Position(0), this->size));
+
+    temp_bytes_allocated = std::max(temp_bytes_allocated, temp_storage_bytes);
+
     grad_sorted.resize(size);
     fvalue.resize(size);
+    fvalue_dst.resize(size);
     result_d.resize(1 << this->depth);
   }
 
@@ -332,45 +344,51 @@ class BaseGrower {
     OK(cudaEventDestroy(event));
   }
 
-  template <typename T, int OFFSET = 2>
-  void Partition(T *src, const NODE_T *row2Node,
-                 const device_vector<unsigned> &parent_node_count,
-                 const unsigned level, const unsigned depth) {
-    if (level != 0) {
-      const unsigned length = 1 << (level - 1);
-      int gridSize = 0;
-      int blockSize = 0;
+  template <typename T>
+  void Partition(T *src, const device_vector<unsigned> &index) {
+    this->PartitionByIndex((T *)thrust::raw_pointer_cast(grad_sorted.data()),
+                           src, index);
 
-      compute1DInvokeConfig(length, &gridSize, &blockSize, partition<NODE_T, T>,
-                            0, 1);
-      partition<NODE_T, T, OFFSET><<<gridSize, blockSize, 0, stream>>>(
-        (T *)thrust::raw_pointer_cast(grad_sorted.data()), row2Node, src,
-        thrust::raw_pointer_cast(parent_node_count.data()), depth - level - 1,
-        temp_bytes_allocated, temp_bytes, this->size, length);
-
-      OK(cudaMemcpyAsync(src, (T *)thrust::raw_pointer_cast(grad_sorted.data()),
-                         size * sizeof(T), cudaMemcpyDeviceToDevice, stream));
-    }
+    OK(cudaMemcpyAsync(src, (T *)thrust::raw_pointer_cast(grad_sorted.data()),
+                       size * sizeof(T), cudaMemcpyDeviceToDevice, stream));
   }
 
   template <typename T, int OFFSET = 2>
-  void Partition(T *dst, T *src, const NODE_T *row2Node,
-                 const device_vector<unsigned> &parent_node_count,
-                 const unsigned level, const unsigned depth) {
-    const unsigned length = 1 << level;
-    if (this->config->dynamic_parallelism) {
-      int gridSize = 0;
-      int blockSize = 0;
+  void Partition2(T *dst, T *src, const NODE_T *row2Node,
+                  const device_vector<unsigned> &parent_node_count,
+                  const unsigned level, const unsigned depth) {
+    const SegmentedInputIterator<const NODE_T *> segmented(row2Node,
+                                                           depth - level - 2);
+    PartitioningIterator<T> out_iter(
+      thrust::raw_pointer_cast(parent_node_count.data()), src, dst,
+      depth - level - 2);
 
-      compute1DInvokeConfig(length, &gridSize, &blockSize,
-                            partition<T, unsigned>, 0, 1);
-
-      partition<NODE_T, T, 2><<<gridSize, blockSize, 0, this->stream>>>(
-        dst, row2Node, src, thrust::raw_pointer_cast(parent_node_count.data()),
-        depth - level - 2, this->temp_bytes_allocated, this->temp_bytes,
-        this->size, length);
-    }
+    OK(cub::DeviceScan::InclusiveScan(
+      this->temp_bytes, this->temp_bytes_allocated, segmented, out_iter,
+      Position(depth - level - 2), this->size, this->stream));
   }
+
+  template <typename T>
+  void PartitionByIndex(T *dst, T *src, const device_vector<unsigned> &index) {
+    scatter_kernel<T><<<gridSizeGather, blockSizeGather, 0, stream>>>(
+      thrust::raw_pointer_cast(index.data()), src, dst, index.size());
+  }
+
+  void CreatePartitioningIndexes(
+    device_vector<unsigned> &indexes, const device_vector<NODE_T> &row2Node,
+    const device_vector<unsigned> &parent_node_count, const unsigned level,
+    const unsigned depth) {
+    const SegmentedInputIterator<const NODE_T *> segmented(
+      thrust::raw_pointer_cast(row2Node.data()), depth - level - 1);
+    PartitioningIndexIterator out_iter(
+      thrust::raw_pointer_cast(parent_node_count.data()),
+      thrust::raw_pointer_cast(indexes.data()), depth - level - 1);
+
+    OK(cub::DeviceScan::InclusiveScan(
+      this->temp_bytes, this->temp_bytes_allocated, segmented, out_iter,
+      Position(depth - level - 1), this->size, this->stream));
+  }
+
 
   template <typename T, int OFFSET = 2>
   void Partition(T *dst, T *src, const NODE_T *row2Node,
@@ -383,7 +401,7 @@ class BaseGrower {
       unsigned size =
         parent_node_count[(i + 1) * OFFSET] - parent_node_count[i * OFFSET];
       if (size != 0) {
-        PartitioningLeafs<NODE_T> conversion_op(depth - level - 2);
+        PartitioningLeafs<NODE_T> conversion_op(depth - level - OFFSET);
 
         cub::TransformInputIterator<bool, PartitioningLeafs<NODE_T>, NODE_T *>
           partition_itr((NODE_T *)row2Node + start, conversion_op);
@@ -401,6 +419,7 @@ class BaseGrower {
   cudaEvent_t event;
   device_vector<SUM_T> sum;
   device_vector<unsigned int> fvalue;
+  device_vector<unsigned int> fvalue_dst;
   device_vector<my_atomics> result_d;
   size_t temp_bytes_allocated;
   void *temp_bytes;

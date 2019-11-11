@@ -24,6 +24,19 @@ using namespace thrust::cuda;
 using thrust::device_vector;
 using thrust::host_vector;
 
+template <typename T>
+__global__ void set_segment(T *row2Node, const unsigned *count_prefix_sum,
+                            int shift, int level, const size_t n) {
+  for (unsigned i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
+       i += gridDim.x * blockDim.x) {
+    T leaf = row2Node[i];
+    unsigned segment =
+      linear_search_2steps(count_prefix_sum, i, unsigned(1 << level) + 1,
+                           unsigned(leaf >> (shift + 1)) << 1);
+    row2Node[i] = (segment << shift) | (leaf & 1 << (shift - 1));
+  }
+}
+
 template <typename SUM_T, typename NODE_T>
 __global__ void update_by_last_tree(float *y, const SUM_T *best_sum,
                                     const unsigned *best_count,
@@ -35,10 +48,7 @@ __global__ void update_by_last_tree(float *y, const SUM_T *best_sum,
        i += gridDim.x * blockDim.x) {
     NODE_T leaf = row2Node[i];
 
-    unsigned segment = 0;
-    while (i >= count_prefix_sum[segment + 1]) {
-      segment++;
-    }
+    unsigned segment = leaf >> 2;
 
     float delta = 0.0;
     const SUM_T left_sum = best_sum[segment];
@@ -82,6 +92,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     active_fids.resize(data->columns);
 
     row2Node.resize(data->rows, 0);
+    partitioning_index.resize(data->rows, 0);
     _bestSplit.resize(1 << (param.depth - 2));
     _nodeStat.resize(1 << (param.depth - 2));
 
@@ -208,6 +219,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   std::vector<Split<SUM_T>> _bestSplit;
 
   device_vector<NODE_T> row2Node;
+  device_vector<unsigned> partitioning_index;
   size_t temp_bytes_per_rec = 0;
 
   TREE_GROWER **growers;
@@ -220,26 +232,36 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     unsigned int take = (unsigned int)(param.colsample_bylevel *
                                        param.colsample_bytree * data->columns);
 
-    growers[0]->template Partition<GRAD_T, 1>(
-      thrust::raw_pointer_cast(objective->grad.data()),
-      thrust::raw_pointer_cast(row2Node.data()), this->best.parent_node_count,
-      level, param.depth);
-    growers[0]->template Partition<float, 1>(
-      thrust::raw_pointer_cast(data->y_internal_d.data()),
-      thrust::raw_pointer_cast(row2Node.data()), this->best.parent_node_count,
-      level, param.depth);
+    if (level != 0) {
+      this->best.NextLevel(length);
 
-    growers[0]->template Partition<float, 1>(
-      thrust::raw_pointer_cast(data->y_hat_d.data()),
-      thrust::raw_pointer_cast(row2Node.data()), this->best.parent_node_count,
-      level, param.depth);
+      int gridSize = 0;
+      int blockSize = 0;
+      compute1DInvokeConfig(data->rows, &gridSize, &blockSize,
+                            set_segment<NODE_T>);
+      set_segment<NODE_T><<<gridSize, blockSize, 0, growers[0]->stream>>>(
+        thrust::raw_pointer_cast(row2Node.data()),
+        thrust::raw_pointer_cast(this->best.parent_node_count.data()),
+        param.depth - level, level, data->rows);
+
+      growers[0]->CreatePartitioningIndexes(partitioning_index, row2Node,
+                                            this->best.parent_node_count, level,
+                                            param.depth);
+
+      //   OK(cudaStreamSynchronize(growers[0]->stream));
+
+      growers[0]->template Partition<GRAD_T>(
+        thrust::raw_pointer_cast(objective->grad.data()), partitioning_index);
+      growers[0]->template Partition<float>(
+        thrust::raw_pointer_cast(data->y_internal_d.data()),
+        partitioning_index);
+
+      growers[0]->template Partition<float>(
+        thrust::raw_pointer_cast(data->y_hat_d.data()), partitioning_index);
+    }
 
     OK(cudaStreamSynchronize(growers[0]->stream));
     OK(cudaStreamSynchronize(growers[0]->copy_d2h_stream));
-
-    if (level != 0) {
-      this->best.NextLevel(length);
-    }
 
     for (size_t j = 0; j < data->columns; ++j) {
       for (size_t i = 0; i < overlap_depth && (j + i) < data->columns; ++i) {
@@ -382,10 +404,8 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     //       data->reduced_size[active_fid], level, gain_param);
     // } else {
     growers[circular_fid]->template ProcessDenseFeature<NODE_T>(
-      row2Node, objective->grad,
-      data->sorted_data_device[active_fid].size() > 0
-        ? thrust::raw_pointer_cast(data->sorted_data_device[active_fid].data())
-        : nullptr,
+      partitioning_index, row2Node, objective->grad,
+      data->sorted_data_device[active_fid],
       thrust::raw_pointer_cast(data->data_reduced[active_fid].data()),
       this->best.parent_node_sum, this->best.parent_node_count,
       data->reduced_size[active_fid], level, param.depth, gain_param,

@@ -26,9 +26,11 @@ class ContinuousTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
 
   // FIXME: Use template parameter instead of unsigned
   template <typename NODE_VALUE_T>
-  void ProcessDenseFeature(const device_vector<NODE_T> &row2Node,
+  void ProcessDenseFeature(const device_vector<unsigned> &partitioning_index,
+                           const device_vector<NODE_T> &row2Node,
                            const device_vector<GRAD_T> &grad_d,
-                           unsigned int *fvalue_d, unsigned int *fvalue_h,
+                           device_vector<unsigned> &fvalue_d,
+                           unsigned int *fvalue_h,
                            const device_vector<SUM_T> &parent_node_sum,
                            const device_vector<unsigned int> &parent_node_count,
                            const unsigned char fvalue_size,

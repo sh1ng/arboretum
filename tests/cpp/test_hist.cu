@@ -27,6 +27,7 @@ TEST(HistTreeGrower, RootSearchContinuousFeature) {
   auto grower = HistTreeGrower<unsigned int, float2, float2>(
     size, depth, hist_size, &best, &histogram, &config);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -48,7 +49,7 @@ TEST(HistTreeGrower, RootSearchContinuousFeature) {
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
     parent_node_count, 3, 0, 1, p, false, 0);
   TEST_OK(cudaStreamSynchronize(grower.stream));
@@ -60,15 +61,17 @@ TEST(HistTreeGrower, RootSearchContinuousFeature) {
 }
 
 TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickDynamic) {
+  const unsigned level = 1;
+  const unsigned depth = 2;
   const InternalConfiguration config(false, 1, 0, false, true);
   const size_t size = 32;
-  const unsigned depth = 2;
   const unsigned hist_size = 8;
   BestSplit<float2> best(1 << depth, hist_size);
   Histogram<float2> histogram(1 << depth, hist_size, 1);
   auto grower = HistTreeGrower<unsigned int, float2, float2>(
     size, depth, hist_size, &best, &histogram, &config);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -108,10 +111,13 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickDynamic) {
 
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, row2Node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
-    parent_node_count, 3, 1, 2, p, false, 0);
+    parent_node_count, 3, level, depth, p, false, 0);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
@@ -164,12 +170,14 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickStatic) {
   const InternalConfiguration config(false, 1, 0, false, false);
   const size_t size = 32;
   const unsigned depth = 2;
+  const unsigned level = 1;
   const unsigned hist_size = 8;
   BestSplit<float2> best(1 << depth, hist_size);
   Histogram<float2> histogram(1 << depth, hist_size, 1);
   auto grower = HistTreeGrower<unsigned int, float2, float2>(
     size, depth, hist_size, &best, &histogram, &config);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -211,10 +219,13 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickStatic) {
 
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, row2Node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
-    parent_node_count, 3, 1, 2, p, false, 0);
+    parent_node_count, 3, level, depth, p, false, 0);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
@@ -265,15 +276,16 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickStatic) {
 
 TEST(HistTreeGrower, Level1SearchContinuousFeatureWithTrickDynamic) {
   const InternalConfiguration config(false, 1, 0, true, true);
-
-  const size_t size = 32;
+  const unsigned level = 1;
   const unsigned depth = 2;
+  const size_t size = 32;
   const unsigned hist_size = 8;
   BestSplit<float2> best(1 << depth, hist_size);
   Histogram<float2> histogram(1 << depth, hist_size, 1);
   auto grower = HistTreeGrower<unsigned int, float2, float2>(
     size, depth, hist_size, &best, &histogram, &config);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -315,10 +327,13 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureWithTrickDynamic) {
 
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, row2Node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
-    parent_node_count, 3, 1, 2, p, false, 0);
+    parent_node_count, 3, level, depth, p, false, 0);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
@@ -373,12 +388,14 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureWithTrickStatic) {
 
   const size_t size = 32;
   const unsigned depth = 2;
+  const unsigned level = 1;
   const unsigned hist_size = 8;
   BestSplit<float2> best(1 << depth, hist_size);
   Histogram<float2> histogram(1 << depth, hist_size, 1);
   auto grower = HistTreeGrower<unsigned int, float2, float2>(
     size, depth, hist_size, &best, &histogram, &config);
   thrust::device_vector<unsigned int> row2Node(size, 0);
+  thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
   thrust::host_vector<unsigned int> fvalue_h(32);
   thrust::device_vector<unsigned int> fvalue_d(32);
@@ -422,10 +439,13 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureWithTrickStatic) {
 
   auto p = GainFunctionParameters(0, 0, 0, 0, 0, 0);
 
+  grower.CreatePartitioningIndexes(partitioning_indexes, row2Node,
+                                   parent_node_count, level, depth);
+
   grower.ProcessDenseFeature<unsigned int>(
-    row2Node, grad, thrust::raw_pointer_cast(fvalue_d.data()),
+    partitioning_indexes, row2Node, grad, fvalue_d,
     thrust::raw_pointer_cast(fvalue_h.data()), parent_node_sum,
-    parent_node_count, 3, 1, 2, p, false, 0);
+    parent_node_count, 3, level, depth, p, false, 0);
   TEST_OK(cudaStreamSynchronize(grower.stream));
 
   thrust::host_vector<my_atomics> result_h = grower.result_d;
