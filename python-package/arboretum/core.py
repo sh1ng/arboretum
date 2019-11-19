@@ -17,7 +17,7 @@ def _load_lib():
     curr_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
     lib_path = os.path.join(curr_path, 'libarboretum.so')
     lib = ctypes.cdll.LoadLibrary(lib_path)
-    lib.ACreateFromDanseMatrix.restype = ctypes.c_char_p
+    lib.ACreateFromDenseMatrix.restype = ctypes.c_char_p
     lib.ASetY.restype = ctypes.c_char_p
     lib.AInitGarden.restype = ctypes.c_char_p
     lib.AGrowTree.restype = ctypes.c_char_p
@@ -29,6 +29,8 @@ def _load_lib():
     lib.ADeleteArray.restype = ctypes.c_char_p
     lib.ASetLabel.restype = ctypes.c_char_p
     lib.ASetWeights.restype = ctypes.c_char_p
+    lib.ADumpModel.restype = ctypes.c_char_p
+    lib.ADumpModel.argtypes = [POINTER(c_char_p), c_void_p]
     return lib
 
 _LIB = _load_lib()
@@ -83,7 +85,7 @@ class DMatrix(object):
             columns = category.shape[1]
             data_category = np.array(category.reshape(category.size), dtype=np.uint32)
 
-        _call_and_throw_if_error(_LIB.ACreateFromDanseMatrix(data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+        _call_and_throw_if_error(_LIB.ACreateFromDenseMatrix(data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
                                                              None if data_category is None else data_category.ctypes.data_as(ctypes.POINTER(ctypes.c_uint)),
                                                 ctypes.c_int(mat.shape[0]),
                                                 ctypes.c_int(mat.shape[1]),
@@ -185,6 +187,7 @@ class Garden(object):
 
         return res
 
-
-
-
+    def dump(self):
+        json = c_char_p()
+        _call_and_throw_if_error(_LIB.ADumpModel(ctypes.byref(json), self.handle))
+        return json.value.decode('utf-8')

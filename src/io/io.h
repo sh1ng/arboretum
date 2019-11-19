@@ -1,5 +1,5 @@
-#ifndef IO_H
-#define IO_H
+#ifndef SRC_IO_H
+#define SRC_IO_H
 
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>

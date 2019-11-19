@@ -13,7 +13,7 @@ using namespace arboretum::core;
 namespace arboretum {
 namespace wrapper {
 
-extern "C" const char *ACreateFromDanseMatrix(const float *data,
+extern "C" const char *ACreateFromDenseMatrix(const float *data,
                                               const unsigned int *categories,
                                               int nrow, int ncol, int ccol,
                                               float missing, VoidPointer *out) {
@@ -86,10 +86,9 @@ extern "C" const char *ASetWeights(VoidPointer data, const float *weights) {
 extern "C" const char *AInitGarden(const char *configuration,
                                    VoidPointer *out) {
   try {
-    const TreeParam param = TreeParam::Parse(configuration);
-    const Verbose verbose = Verbose::Parse(configuration);
-    const InternalConfiguration c = InternalConfiguration::Parse(configuration);
-    Garden *source = new Garden(param, verbose, c);
+    const Configuration cfg = Configuration::Parse(configuration);
+
+    Garden *source = new Garden(cfg);
     *out = static_cast<VoidPointer>(source);
     return NULL;
   } catch (const char *error) {
@@ -135,6 +134,12 @@ extern "C" const char *APredict(VoidPointer garden, VoidPointer data,
   } catch (const char *error) {
     return error;
   }
+}
+
+extern "C" const char *ADumpModel(const char **model, VoidPointer garden) {
+  Garden *garden_p = static_cast<Garden *>(garden);
+  *model = garden_p->GetModel();
+  return NULL;
 }
 
 extern "C" const char *AGetY(VoidPointer garden, VoidPointer data,

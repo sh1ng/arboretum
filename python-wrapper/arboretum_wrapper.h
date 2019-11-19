@@ -3,7 +3,7 @@
 
 typedef void *VoidPointer;
 
-extern "C" const char *ACreateFromDanseMatrix(const float *data,
+extern "C" const char *ACreateFromDenseMatrix(const float *data,
                                               const unsigned int *categories,
                                               int nrow, int ncol, int ccol,
                                               float missing, VoidPointer *out);
@@ -28,10 +28,12 @@ extern "C" const char *AGetY(VoidPointer garden, VoidPointer data,
 extern "C" const char *APredict(VoidPointer garden, VoidPointer data,
                                 const float **out);
 
+extern "C" const char *ADumpModel(const char **model, VoidPointer garden);
+
 extern "C" const char *AFreeDMatrix(VoidPointer ptr);
 
 extern "C" const char *AFreeGarden(VoidPointer ptr);
 
 extern "C" const char *ADeleteArray(float *in);
 
-#endif // ARBORETUM_WRAPPER
+#endif  // ARBORETUM_WRAPPER

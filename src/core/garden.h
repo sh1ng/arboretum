@@ -1,5 +1,5 @@
-#ifndef BOOSTER_H
-#define BOOSTER_H
+#ifndef SRC_CORE_GARDEN_H
+#define SRC_CORE_GARDEN_H
 
 #include <stdio.h>
 #include <algorithm>
@@ -8,6 +8,7 @@
 #include "../io/io.h"
 #include "objective.h"
 #include "param.h"
+#include "reg_tree.h"
 
 namespace arboretum {
 namespace core {
@@ -97,29 +98,7 @@ struct NodeStat {
   }
 };
 
-struct Node {
-  static inline unsigned int Left(unsigned int parent) {
-    return 2 * parent + 1;
-  }
-
-  static inline unsigned int Right(unsigned int parent) {
-    return 2 * parent + 2;
-  }
-
-  static inline unsigned int HeapOffset(unsigned int level) {
-    return (1 << level) - 1;
-  }
-
-  Node(int id) : id(id), fid(0), category((unsigned int)-1) {}
-
-  unsigned id;
-  float threshold;
-  unsigned int fid;
-  unsigned int category;
-  unsigned quantized;
-};
-
-struct RegTree {
+struct RegTree : public DecisionTree {
   static std::vector<int> InitLeft(unsigned int depth) {
     std::vector<int> tmp(1 << depth);
     for (int i = 0; i < (1 << depth); ++i) {
@@ -136,24 +115,25 @@ struct RegTree {
     return tmp;
   }
 
-  std::vector<Node> nodes;
   const unsigned int depth;
   const unsigned int offset;
   const unsigned short label;
-  std::vector<float> leaf_level;
   std::vector<int> _node_lookup[2];
 
   RegTree(unsigned int depth, unsigned short label)
-      : depth(depth), offset((1 << (depth - 1)) - 1), label(label) {
+      : DecisionTree(),
+        depth(depth),
+        offset((1 << (depth - 1)) - 1),
+        label(label) {
     unsigned int nodes_num = (1 << depth) - 1;
     nodes.reserve(nodes_num);
     _node_lookup[0] = RegTree::InitRight(depth);
     _node_lookup[1] = RegTree::InitLeft(depth);
 
     for (size_t i = 0; i < nodes_num; ++i) {
-      nodes.push_back(Node(i));
+      nodes.push_back(Node(i, depth));
     }
-    leaf_level.resize(1 << (depth - 1));
+    weights.resize(1 << (depth - 1));
   }
 
   inline int ChildNode(const unsigned int parent, const bool isLeft) const {
@@ -178,7 +158,7 @@ struct RegTree {
 
         node_id = ChildNode(node_id, isLeft);
       }
-      out[i + label * data->rows] += leaf_level[node_id - offset];
+      out[i + label * data->rows] += weights[node_id - offset];
     }
   }
 
@@ -203,7 +183,7 @@ struct RegTree {
 
         node_id = ChildNode(node_id, isLeft);
       }
-      out[i + label * data->rows] += leaf_level[node_id - offset];
+      out[i + label * data->rows] += weights[node_id - offset];
     }
   }
 
@@ -212,7 +192,7 @@ struct RegTree {
                thrust::host_vector<float> &out) const {
 #pragma omp parallel for
     for (size_t i = 0; i < data->rows; ++i) {
-      out[i + label * data->rows] += leaf_level[row2Node[i]];
+      out[i + label * data->rows] += weights[row2Node[i]];
     }
   }
 };  // namespace core
@@ -230,13 +210,10 @@ class GardenBuilderBase {
 
 class Garden {
  public:
-  Garden(const TreeParam &param, const Verbose &verbose,
-         const InternalConfiguration &cfg);
+  Garden(const Configuration &cfg);
   ~Garden();
 
-  const TreeParam param;
-  const Verbose verbose;
-  const InternalConfiguration cfg;
+  const Configuration cfg;
   void GrowTree(io::DataMatrix *data, float *grad);
   void Predict(const arboretum::io::DataMatrix *data,
                std::vector<float> &out) const;
