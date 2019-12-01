@@ -39,15 +39,8 @@ def run_regression(depth, true_values, true_model, trees=1, double_precision=Tru
                              'alpha': 0.0
                          }})
 
-    model = arboretum.Garden(config, data)
+    model = arboretum.train(config, data, trees)
 
-    # print(model.handle)
-
-    # grow trees
-    for i in range(trees):
-        model.grow_tree()
-
-    print(model.handle)
     # predict on train data set
     pred = model.predict(data)
     print(true_values)
@@ -57,6 +50,13 @@ def run_regression(depth, true_values, true_model, trees=1, double_precision=Tru
     model_json = model.dump()
     model = json.loads(model_json)
     utils.assert_model(true_model, model)
+
+    model = arboretum.load(model)
+    pred = model.predict(data)
+    print(true_values)
+    print(pred)
+    pred = model.predict(data)
+    assert np.allclose(pred, true_values)
 
 
 @pytest.mark.parametrize("double_precision", [True, False])

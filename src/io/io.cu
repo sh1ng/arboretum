@@ -18,10 +18,7 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
       columns_dense(columns),
       columns_category(columns_category) {
   _init = false;
-  y_hat_d.reserve(rows);
-  y_internal_d.reserve(rows);
   y_hat.reserve(rows);
-  y_internal.reserve(rows);
   data.resize(columns);
   data_category_device.resize(columns_category);
   sorted_data_device.resize(columns);

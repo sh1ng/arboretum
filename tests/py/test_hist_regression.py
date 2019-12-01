@@ -41,9 +41,7 @@ def run_regression(depth, true_values, true_model, trees=1, double_precision=Tru
                              'lambda': 0.0,
                              'alpha': 0.0,
                          }})
-    model = arboretum.Garden(config, data)
-    for _ in range(trees):
-        model.grow_tree()
+    model = arboretum.train(config, data, trees)
     data = arboretum.DMatrix(boston.data[0:n])
 
     pred = model.predict(data)

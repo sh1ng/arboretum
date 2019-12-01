@@ -12,26 +12,10 @@
 namespace arboretum {
 namespace core {
 
-class GradBuilder {
- public:
-  static inline float Sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
-  static inline double Sigmoid(double x) {
-    return 1.0f / (1.0f + std::exp(-x));
-  }
-  static inline float2 Regression(float y, float y_hat) {
-    return make_float2(2.0 * (y - y_hat), 2.0);
-  }
-  static inline float2 LogReg(float y, float y_hat) {
-    return make_float2(y - y_hat, std::max(y * (1.0f - y_hat), 1e-16f));
-  }
-};
-
 class ApproximatedObjectiveBase {
  public:
-  ApproximatedObjectiveBase(io::DataMatrix *data) : data(data) {}
+  ApproximatedObjectiveBase() {}
   virtual ~ApproximatedObjectiveBase() {}
-  const io::DataMatrix *data;
-  virtual void UpdateGrad() = 0;
   virtual float IntoInternal(float v) { return v; }
   virtual inline void FromInternal(thrust::host_vector<float> &in,
                                    std::vector<float> &out) {
@@ -45,26 +29,30 @@ class ApproximatedObjectiveBase {
 template <class grad_type>
 class ApproximatedObjective : public ApproximatedObjectiveBase {
  public:
-  ApproximatedObjective(io::DataMatrix *data)
-      : ApproximatedObjectiveBase(data) {
-    blockSize = MAX_THREADS;
-    gridSize = (data->rows + blockSize - 1) / blockSize;
-  }
-  thrust::device_vector<grad_type> grad;
-  int gridSize;
-  int blockSize;
+  ApproximatedObjective() : ApproximatedObjectiveBase() {}
+  virtual void UpdateGrad(thrust::device_vector<grad_type> &grad,
+                          const thrust::device_vector<float> &y_hat_d,
+                          const thrust::device_vector<float> &y_internal_d) = 0;
 };
 
 class RegressionObjective : public ApproximatedObjective<float> {
  public:
-  RegressionObjective(io::DataMatrix *data, float initial_y);
-  virtual void UpdateGrad() override;
+  RegressionObjective(float initial_y);
+  virtual void UpdateGrad(
+    thrust::device_vector<float> &grad,
+    const thrust::device_vector<float> &y_hat_d,
+    const thrust::device_vector<float> &y_internal_d) override;
+  //   virtual void UpdateGrad() override;
 };
 
 class LogisticRegressionObjective : public ApproximatedObjective<float2> {
  public:
-  LogisticRegressionObjective(io::DataMatrix *data, float initial_y);
-  virtual void UpdateGrad() override;
+  LogisticRegressionObjective(float initial_y);
+  virtual void UpdateGrad(
+    thrust::device_vector<float2> &grad,
+    const thrust::device_vector<float> &y_hat_d,
+    const thrust::device_vector<float> &y_internal_d) override;
+  //   virtual void UpdateGrad() override;
 
   virtual inline float IntoInternal(float v) override {
     return std::log(v / (1 - v));
@@ -85,9 +73,12 @@ class LogisticRegressionObjective : public ApproximatedObjective<float2> {
 
 class SoftMaxObjective : public ApproximatedObjective<float2> {
  public:
-  SoftMaxObjective(io::DataMatrix *data, unsigned char labels_count,
-                   float initial_y);
-  virtual void UpdateGrad() override;
+  SoftMaxObjective(unsigned char labels_count, float initial_y);
+  virtual void UpdateGrad(
+    thrust::device_vector<float2> &grad,
+    const thrust::device_vector<float> &y_hat_d,
+    const thrust::device_vector<float> &y_internal_d) override;
+  //   virtual void UpdateGrad() override;
   virtual inline float IntoInternal(float v) override { return v; }
   virtual inline void FromInternal(thrust::host_vector<float> &in,
                                    std::vector<float> &out) override {

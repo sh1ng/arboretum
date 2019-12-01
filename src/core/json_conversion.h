@@ -25,8 +25,8 @@ inline void to_json(json &j, const Node &node) {
 
 inline void from_json(const json &j, Node &node) {
   j.at("id").get_to(node.id);
-  j.at("threshold").get_to(node.threshold);
-  j.at("fid").get_to(node.fid);
+  if (j.find("threshold") != j.end()) j.at("threshold").get_to(node.threshold);
+  if (j.find("fid") != j.end()) j.at("fid").get_to(node.fid);
 }
 
 inline void to_json(json &j, const DecisionTree &tree) {

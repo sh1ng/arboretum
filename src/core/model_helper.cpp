@@ -22,5 +22,12 @@ const char *DumpModel(const Configuration &cfg,
   return cstr;
 }
 
+std::vector<DecisionTree> LoadModel(const char *model) {
+  json j = json::parse(model);
+  std::vector<DecisionTree> trees;
+  j.at("model").get_to(trees);
+  return trees;
+}
+
 }  // namespace core
 }  // namespace arboretum

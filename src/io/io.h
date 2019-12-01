@@ -28,10 +28,6 @@ class DataMatrix {
   std::vector<thrust::device_vector<unsigned int>> sorted_data_device;
 
   thrust::host_vector<float> y_hat;
-  thrust::host_vector<float> y_internal;
-  // FIXME: store it somewhere else(model learner?)
-  thrust::device_vector<float> y_hat_d;
-  thrust::device_vector<float> y_internal_d;
   std::vector<unsigned char> labels;
   std::vector<unsigned char> reduced_size;
   std::vector<unsigned char> category_size;

@@ -206,6 +206,7 @@ class GardenBuilderBase {
                         const unsigned short label) = 0;
   virtual void PredictByGrownTree(RegTree *tree, io::DataMatrix *data,
                                   thrust::host_vector<float> &out) const = 0;
+  virtual void UpdateGrad() = 0;
 };
 
 class Garden {
@@ -220,6 +221,7 @@ class Garden {
   void UpdateByLastTree(arboretum::io::DataMatrix *data);
   void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out) const;
   const char *GetModel() const;
+  void Restore(const char *json_model);
 
  private:
   bool _init;

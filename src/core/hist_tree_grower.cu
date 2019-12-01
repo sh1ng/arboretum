@@ -313,14 +313,14 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   const unsigned char fvalue_size, const unsigned level, const unsigned depth,
   const GainFunctionParameters gain_param, const bool partition_only,
   const int fid) {
-  const unsigned lenght = 1 << level;
+  const unsigned length = 1 << level;
 
   OK(cudaMemsetAsync(thrust::raw_pointer_cast(this->result_d.data()), 0,
-                     lenght * sizeof(my_atomics), this->stream));
+                     length * sizeof(my_atomics), this->stream));
   OK(cudaMemsetAsync(thrust::raw_pointer_cast(this->sum.data()), 0,
-                     this->hist_size * lenght * sizeof(SUM_T), this->stream));
+                     this->hist_size * length * sizeof(SUM_T), this->stream));
   OK(cudaMemsetAsync(thrust::raw_pointer_cast(this->hist_bin_count.data()), 0,
-                     this->hist_size * lenght * sizeof(unsigned),
+                     this->hist_size * length * sizeof(unsigned),
                      this->stream));
 
   unsigned int *fvalue_tmp = NULL;
@@ -368,7 +368,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
         this->features_histogram->count_hist[fid].data()),
       thrust::raw_pointer_cast(grad_d.data()),
       thrust::raw_pointer_cast(parent_node_count.data()),
-      this->d_fvalue_partitioned, hist_size_bits, hist_size, lenght,
+      this->d_fvalue_partitioned, hist_size_bits, hist_size, length,
       this->features_histogram->CanUseTrick(fid, level), this->stream);
   } else {
     HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
@@ -384,17 +384,17 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
     this->temp_bytes, this->temp_bytes_allocated,
     thrust::raw_pointer_cast(this->sum.data()),
     thrust::raw_pointer_cast(this->hist_prefix_sum.data()), sum_op,
-    lenght * this->hist_size, this->stream));
+    length * this->hist_size, this->stream));
 
   OK(cub::DeviceScan::InclusiveSum(
     this->temp_bytes, this->temp_bytes_allocated,
     thrust::raw_pointer_cast(this->hist_bin_count.data()),
     thrust::raw_pointer_cast(this->hist_prefix_count.data()),
-    lenght * this->hist_size, this->stream));
+    length * this->hist_size, this->stream));
   int grid_size = 0;
   int block_size = 0;
 
-  compute1DInvokeConfig(lenght * this->hist_size, &grid_size, &block_size,
+  compute1DInvokeConfig(length * this->hist_size, &grid_size, &block_size,
                         hist_gain_kernel<SUM_T>, 0, 1024);
 
   hist_gain_kernel<SUM_T><<<grid_size, block_size, 0, this->stream>>>(
@@ -402,7 +402,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
     thrust::raw_pointer_cast(this->hist_prefix_count.data()),
     thrust::raw_pointer_cast(parent_node_sum.data()),
     thrust::raw_pointer_cast(parent_node_count.data()), this->hist_size,
-    lenght * this->hist_size, gain_param,
+    length * this->hist_size, gain_param,
     thrust::raw_pointer_cast(this->result_d.data()));
 }
 

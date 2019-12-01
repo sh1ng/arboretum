@@ -9,9 +9,12 @@ from ctypes import *
 
 import numpy as np
 import scipy.sparse
+import json
+
 
 class ArboretumError(Exception):
     pass
+
 
 def _load_lib():
     curr_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
@@ -31,24 +34,29 @@ def _load_lib():
     lib.ASetWeights.restype = ctypes.c_char_p
     lib.ADumpModel.restype = ctypes.c_char_p
     lib.ADumpModel.argtypes = [POINTER(c_char_p), c_void_p]
+    lib.ALoadModel.restype = ctypes.c_char_p
     return lib
 
+
 _LIB = _load_lib()
+
 
 def _call_and_throw_if_error(ret):
     if ret is not None:
         raise ArboretumError(ValueError(ret))
 
+
 class DMatrix(object):
-    def __init__(self, data, data_category = None, y=None, labels=None, weights = None, missing=0.0):
+    def __init__(self, data, data_category=None, y=None, labels=None, weights=None, missing=0.0):
 
         self.labels_count = 1
         self.rows = data.shape[0]
         self.columns = data.shape[1]
-        self._init_from_npy2d(data, missing, category = data_category)
+        self._init_from_npy2d(data, missing, category=data_category)
 
         if y is not None and labels is not None:
-            raise ValueError('y and labels both are not None. Specify labels only for multi label classification')
+            raise ValueError(
+                'y and labels both are not None. Specify labels only for multi label classification')
         if y is not None:
             assert data.shape[0] == len(y)
             self._init_y(y)
@@ -68,9 +76,9 @@ class DMatrix(object):
     def _set_weight(self, weights):
         data = np.array(weights.reshape(self.rows), dtype=np.float32)
         _call_and_throw_if_error(_LIB.ASetWeights(self.handle,
-                                                data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
+                                                  data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
 
-    def _init_from_npy2d(self, mat, missing, category = None):
+    def _init_from_npy2d(self, mat, missing, category=None):
         if len(mat.shape) != 2:
             raise ValueError('Input numpy.ndarray must be 2 dimensional')
         if category is not None and category.dtype not in [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32, np.int]:
@@ -83,52 +91,71 @@ class DMatrix(object):
             columns = 0
         else:
             columns = category.shape[1]
-            data_category = np.array(category.reshape(category.size), dtype=np.uint32)
+            data_category = np.array(category.reshape(
+                category.size), dtype=np.uint32)
 
         _call_and_throw_if_error(_LIB.ACreateFromDenseMatrix(data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-                                                             None if data_category is None else data_category.ctypes.data_as(ctypes.POINTER(ctypes.c_uint)),
-                                                ctypes.c_int(mat.shape[0]),
-                                                ctypes.c_int(mat.shape[1]),
-                                                ctypes.c_int(columns),
-                                                ctypes.c_float(missing),
-                                                ctypes.byref(self.handle)))
+                                                             None if data_category is None else data_category.ctypes.data_as(
+                                                                 ctypes.POINTER(ctypes.c_uint)),
+                                                             ctypes.c_int(
+                                                                 mat.shape[0]),
+                                                             ctypes.c_int(
+                                                                 mat.shape[1]),
+                                                             ctypes.c_int(
+                                                                 columns),
+                                                             ctypes.c_float(
+                                                                 missing),
+                                                             ctypes.byref(self.handle)))
 
     def _init_y(self, y):
         data = np.array(y.reshape(self.rows), dtype=np.float32)
         _call_and_throw_if_error(_LIB.ASetY(self.handle,
                                             data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
+
     def _init_labels(self, labels):
         data = np.array(labels.reshape(self.rows), dtype=np.uint8)
         _call_and_throw_if_error(_LIB.ASetLabel(self.handle,
-                                            data.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))))
+                                                data.ctypes.data_as(ctypes.POINTER(ctypes.c_ubyte))))
+
 
 class Garden(object):
     _objectives = {
         'reg:linear': 0,
         'reg:logistic': 1
     }
-    def __init__(self, config, data):
-        self.data = data
-        self._config = config
+
+    def __init__(self, config):
+        self.config = config
         self._init = False
-        self.labels_count = data.labels_count
-
-
 
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeGarden(self.handle))
-        del self.data
+        if hasattr(self, 'data'):
+            del self.data
 
+    def load(self, json_model):
+        if not self._init:
+            self.config = json.dumps(json_model['configuration'])
+            self.labels_count = json_model['configuration']['tree']['labels_count']
+            self.handle = ctypes.c_void_p()
 
-    def train(self, y, y_hat):
+            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config.encode('UTF-8')),
+                                                      ctypes.byref(self.handle)))
+            self._init = True
+
+        json_model_str = json.dumps(json_model)
+
+        _call_and_throw_if_error(_LIB.ALoadModel(
+            c_char_p(json_model_str.encode('UTF-8')), self.handle))
+
+    def train(self, num_round):
         pass
-
 
     def grow_tree(self, grad=None):
         if not self._init:
             self.handle = ctypes.c_void_p()
 
-            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self._config.encode('UTF-8')),
+            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config.encode('UTF-8')),
                                                       ctypes.byref(self.handle)))
             self._init = True
 
@@ -136,8 +163,8 @@ class Garden(object):
             assert len(grad) == self.data.rows
             data = np.array(grad.reshape(self.data.rows), dtype=np.float32)
             _call_and_throw_if_error(_LIB.AGrowTree(self.handle,
-                                                self.data.handle,
-                                                data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
+                                                    self.data.handle,
+                                                    data.ctypes.data_as(ctypes.POINTER(ctypes.c_float))))
         else:
             _call_and_throw_if_error(_LIB.AGrowTree(self.handle,
                                                     self.data.handle,
@@ -145,14 +172,14 @@ class Garden(object):
 
     def append_last_tree(self, data):
         _call_and_throw_if_error(_LIB.AAppendLastTree(self.handle,
-                                               data.handle))
+                                                      data.handle))
+
     def get_y(self, data):
         length = int(data.rows)
         preds = ctypes.POINTER(ctypes.c_float)()
         _call_and_throw_if_error(_LIB.AGetY(self.handle,
-                                                data.handle,
-                                                ctypes.byref(preds)))
-
+                                            data.handle,
+                                            ctypes.byref(preds)))
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
@@ -160,8 +187,8 @@ class Garden(object):
         if self.labels_count == 1:
             res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
         else:
-            res = np.copy(np.ctypeslib.as_array(preds, shape=(length, self.labels_count)))
-
+            res = np.copy(np.ctypeslib.as_array(
+                preds, shape=(length, self.labels_count)))
 
         _call_and_throw_if_error(_LIB.ADeleteArray(preds))
 
@@ -171,9 +198,8 @@ class Garden(object):
         length = int(data.rows)
         preds = ctypes.POINTER(ctypes.c_float)()
         _call_and_throw_if_error(_LIB.APredict(self.handle,
-                                                data.handle,
-                                                ctypes.byref(preds)))
-
+                                               data.handle,
+                                               ctypes.byref(preds)))
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')
@@ -181,7 +207,8 @@ class Garden(object):
         if self.labels_count == 1:
             res = np.copy(np.ctypeslib.as_array(preds, shape=(length,)))
         else:
-            res = np.copy(np.ctypeslib.as_array(preds, shape=(length, self.labels_count)))
+            res = np.copy(np.ctypeslib.as_array(
+                preds, shape=(length, self.labels_count)))
 
         _call_and_throw_if_error(_LIB.ADeleteArray(preds))
 
@@ -189,5 +216,21 @@ class Garden(object):
 
     def dump(self):
         json = c_char_p()
-        _call_and_throw_if_error(_LIB.ADumpModel(ctypes.byref(json), self.handle))
+        _call_and_throw_if_error(_LIB.ADumpModel(
+            ctypes.byref(json), self.handle))
         return json.value.decode('utf-8')
+
+
+def train(config, data, num_round):
+    model = Garden(config)
+    model.data = data
+    model.labels_count = data.labels_count
+    for _ in range(num_round):
+        model.grow_tree(None)
+    return model
+
+
+def load(json_model):
+    model = Garden(None)
+    model.load(json_model)
+    return model

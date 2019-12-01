@@ -30,11 +30,7 @@ def run_regression(depth, true_values, true_model, trees=1):
                              'alpha': 0.0
                          }})
 
-    model = arboretum.Garden(config, data)
-
-    # grow trees
-    for i in range(trees):
-        model.grow_tree()
+    model = arboretum.train(config, data, trees)
 
     # predict on train data set
     pred = model.predict(data)

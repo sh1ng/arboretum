@@ -30,6 +30,8 @@ extern "C" const char *APredict(VoidPointer garden, VoidPointer data,
 
 extern "C" const char *ADumpModel(const char **model, VoidPointer garden);
 
+extern "C" const char *ALoadModel(const char *model, VoidPointer garden);
+
 extern "C" const char *AFreeDMatrix(VoidPointer ptr);
 
 extern "C" const char *AFreeGarden(VoidPointer ptr);

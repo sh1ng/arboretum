@@ -142,6 +142,12 @@ extern "C" const char *ADumpModel(const char **model, VoidPointer garden) {
   return NULL;
 }
 
+extern "C" const char *ALoadModel(const char *model, VoidPointer garden) {
+  Garden *garden_p = static_cast<Garden *>(garden);
+  garden_p->Restore(model);
+  return NULL;
+}
+
 extern "C" const char *AGetY(VoidPointer garden, VoidPointer data,
                              const float **out) {
   try {
