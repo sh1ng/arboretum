@@ -63,7 +63,7 @@ void DataMatrix::InitHist(int hist_size, bool verbose) {
         vector<float>::iterator indx =
           std::lower_bound(data_reduced_mapping[i].begin(),
                            data_reduced_mapping[i].end(), data[i][j]);
-        unsigned int idx = indx - data_reduced_mapping[i].begin();
+        unsigned short idx = indx - data_reduced_mapping[i].begin();
         data_reduced[i][j] = idx;
       }
     }

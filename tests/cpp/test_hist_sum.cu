@@ -13,7 +13,7 @@ TEST(SingleNodeHistSumFloat, Naive) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<float> sum(size, 0.0);
   thrust::device_vector<unsigned> count(size, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(2);
   node_size[0] = 0;
   node_size[1] = size;
@@ -43,7 +43,7 @@ TEST(SingleNodeHistSumFloat, SingleSegment) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<float> sum(size, 0.0);
   thrust::device_vector<unsigned> count(size, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(2);
   node_size[0] = 0;
   node_size[1] = size;
@@ -75,7 +75,7 @@ TEST(SingleNodeHistSumFloat, SingleSegmentFullSize) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<float> sum(size, 0.0);
   thrust::device_vector<unsigned> count(size, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(2);
   node_size[0] = 0;
   node_size[1] = size;
@@ -106,7 +106,7 @@ TEST(SingleNodeHistSumDouble, Naive) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(size, 0.0);
   thrust::device_vector<unsigned> count(size, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(2);
   node_size[0] = 0;
   node_size[1] = size;
@@ -136,7 +136,7 @@ TEST(SingleNodeHistSumDouble, SingleSegment) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(size, 0.0);
   thrust::device_vector<unsigned> count(size, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(2);
   node_size[0] = 0;
   node_size[1] = size;
@@ -168,7 +168,7 @@ TEST(SingleNodeHistSumDouble, SingleSegmentFullSize) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(size, 0.0);
   thrust::device_vector<unsigned> count(size, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(2);
   node_size[0] = 0;
   node_size[1] = size;
@@ -201,7 +201,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesNoTrick) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
   thrust::device_vector<unsigned> count(hist_size * 2, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(3);
   node_size[0] = 0;
   node_size[1] = size / 2;
@@ -244,7 +244,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricNoTrick) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
   thrust::device_vector<unsigned> count(hist_size * 2, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(3);
   node_size[0] = 0;
   node_size[1] = 10;
@@ -297,7 +297,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
   thrust::device_vector<unsigned> count(hist_size * 2, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(3);
   node_size[0] = 0;
   node_size[1] = 10;
@@ -358,7 +358,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick2) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
   thrust::device_vector<unsigned> count(hist_size * 2, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(3);
   node_size[0] = 0;
   node_size[1] = size - 10;
@@ -419,7 +419,7 @@ TEST(MultiNodeHistSumDouble, SingleSegmentWithTrick) {
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
   thrust::device_vector<unsigned> count(hist_size * 2, 0);
-  thrust::device_vector<unsigned> bin(size);
+  thrust::device_vector<unsigned short> bin(size);
   thrust::device_vector<unsigned> node_size(3);
   node_size[0] = 0;
   node_size[1] = size / 2;

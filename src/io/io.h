@@ -14,18 +14,20 @@ using namespace thrust;
 class DataMatrix {
  public:
   std::vector<thrust::host_vector<
-    unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
+    unsigned short,
+    thrust::cuda::experimental::pinned_allocator<unsigned short>>>
     data_categories;
 
   std::vector<thrust::host_vector<float>> data;
   std::vector<thrust::host_vector<
-    unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
+    unsigned short,
+    thrust::cuda::experimental::pinned_allocator<unsigned short>>>
     data_reduced;
 
   std::vector<std::vector<float>> data_reduced_mapping;
 
-  std::vector<thrust::device_vector<unsigned int>> data_category_device;
-  std::vector<thrust::device_vector<unsigned int>> sorted_data_device;
+  std::vector<thrust::device_vector<unsigned short>> data_category_device;
+  std::vector<thrust::device_vector<unsigned short>> sorted_data_device;
 
   thrust::host_vector<float> y_hat;
   std::vector<unsigned char> labels;

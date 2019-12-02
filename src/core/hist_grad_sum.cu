@@ -97,7 +97,7 @@ template __global__ void update<mydouble2>(
 template <typename SUM_T, typename GRAD_T, int ITEMS_PER_THREAD>
 __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
                               const GRAD_T *__restrict__ values,
-                              const unsigned *__restrict__ bin,
+                              const unsigned short *__restrict__ bin,
                               const unsigned end_bit, const unsigned segment,
                               const size_t n) {
   int warp_id = threadIdx.x / 32;
@@ -232,25 +232,25 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
 
 template __global__ void hist_sum_node<float, float, HIST_SUM_ITEMS_PER_THREAD>(
   float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
-  const unsigned *__restrict__ bin, const unsigned end_bit,
+  const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
 template __global__ void
 hist_sum_node<double, float, HIST_SUM_ITEMS_PER_THREAD>(
   double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
-  const unsigned *__restrict__ bin, const unsigned end_bit,
+  const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
 template __global__ void
 hist_sum_node<float2, float2, HIST_SUM_ITEMS_PER_THREAD>(
   float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
-  const unsigned *__restrict__ bin, const unsigned end_bit,
+  const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
 template __global__ void
 hist_sum_node<mydouble2, float2, HIST_SUM_ITEMS_PER_THREAD>(
   mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
-  const unsigned *__restrict__ bin, const unsigned end_bit,
+  const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
 template <typename SUM_T, typename GRAD_T, int ITEMS_PER_THREAD>
@@ -258,7 +258,7 @@ __global__ void hist_sum_multi_node(
   SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick) {
   //
   int node_id = blockIdx.x >> blocks_per_node;
@@ -425,28 +425,28 @@ template __global__ void hist_sum_multi_node<float, float>(
   float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template __global__ void hist_sum_multi_node<float2, float2>(
   float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template __global__ void hist_sum_multi_node<double, float>(
   double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template __global__ void hist_sum_multi_node<mydouble2, float2>(
   mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template <typename SUM_T, typename GRAD_T>
@@ -454,7 +454,7 @@ __global__ void hist_sum_dynamic(
   SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned hist_size_bits, const bool use_trick, const size_t n) {
   for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
@@ -503,36 +503,36 @@ template __global__ void hist_sum_dynamic<float, float>(
   float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned hist_size_bits, const bool use_trick, const size_t n);
 
 template __global__ void hist_sum_dynamic<float2, float2>(
   float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned hist_size_bits, const bool use_trick, const size_t n);
 
 template __global__ void hist_sum_dynamic<double, float>(
   double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned hist_size_bits, const bool use_trick, const size_t n);
 
 template __global__ void hist_sum_dynamic<mydouble2, float2>(
   mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned hist_size,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned hist_size_bits, const bool use_trick, const size_t n);
 
 template <typename SUM_T, typename GRAD_T>
 __global__ void hist_sum(SUM_T *dst_sum, unsigned *dst_count,
                          const GRAD_T *__restrict__ values,
                          const unsigned *__restrict__ parent_count_iter,
-                         const unsigned *__restrict__ bin, const unsigned bins,
-                         const size_t n) {
+                         const unsigned short *__restrict__ bin,
+                         const unsigned bins, const size_t n) {
   for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     // TODO: Binary search?
@@ -551,19 +551,19 @@ __global__ void hist_sum(SUM_T *dst_sum, unsigned *dst_count,
 template __global__ void hist_sum<float, float>(
   float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned bins, const size_t n);
+  const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
 
 template __global__ void hist_sum<float2, float2>(
   float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned bins, const size_t n);
+  const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
 
 template __global__ void hist_sum<double, float>(
   double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned bins, const size_t n);
+  const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
 
 template __global__ void hist_sum<mydouble2, float2>(
   mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned *__restrict__ bin, const unsigned bins, const size_t n);
+  const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);

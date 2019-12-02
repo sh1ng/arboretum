@@ -197,7 +197,7 @@ __global__ void gain_kernel_category(
 }
 
 template <typename NODE_T>
-__global__ void apply_split(NODE_T *row2Node, const unsigned *fvalues,
+__global__ void apply_split(NODE_T *row2Node, const unsigned short *fvalues,
                             const unsigned int threshold,
                             const unsigned int level, const unsigned n) {
   for (unsigned i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
@@ -389,7 +389,6 @@ class BaseGrower {
       Position(depth - level - 1), this->size, this->stream));
   }
 
-
   template <typename T, int OFFSET = 2>
   void Partition(T *dst, T *src, const NODE_T *row2Node,
                  const host_vector<unsigned> &parent_node_count,
@@ -418,8 +417,8 @@ class BaseGrower {
   cudaStream_t copy_d2h_stream;
   cudaEvent_t event;
   device_vector<SUM_T> sum;
-  device_vector<unsigned int> fvalue;
-  device_vector<unsigned int> fvalue_dst;
+  device_vector<unsigned short> fvalue;
+  device_vector<unsigned short> fvalue_dst;
   device_vector<my_atomics> result_d;
   size_t temp_bytes_allocated;
   void *temp_bytes;
@@ -432,7 +431,7 @@ class BaseGrower {
   int blockSizeGather;
   int gridSizeGather;
   device_vector<GRAD_T> grad_sorted;
-  unsigned *d_fvalue_partitioned;
+  unsigned short *d_fvalue_partitioned;
   const BestSplit<SUM_T> *best;
   Histogram<SUM_T> *features_histogram;
   const InternalConfiguration *config;

@@ -29,8 +29,8 @@ TEST(HistTreeGrower, RootSearchContinuousFeature) {
   thrust::device_vector<unsigned int> row2Node(size, 0);
   thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
-  thrust::host_vector<unsigned int> fvalue_h(32);
-  thrust::device_vector<unsigned int> fvalue_d(32);
+  thrust::host_vector<unsigned short> fvalue_h(32);
+  thrust::device_vector<unsigned short> fvalue_d(32);
   float2 sum = make_float2(0.0, 0.0);
   for (int i = 0; i < size; ++i) {
     grad[i] = make_float2(float(i), 1.0);
@@ -73,8 +73,8 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickDynamic) {
   thrust::device_vector<unsigned int> row2Node(size, 0);
   thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
-  thrust::host_vector<unsigned int> fvalue_h(32);
-  thrust::device_vector<unsigned int> fvalue_d(32);
+  thrust::host_vector<unsigned short> fvalue_h(32);
+  thrust::device_vector<unsigned short> fvalue_d(32);
   float2 sum = make_float2(0.0, 0.0);
 
   thrust::device_vector<unsigned> hist_count((1 << depth) * hist_size, 0);
@@ -179,8 +179,8 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureNoTrickStatic) {
   thrust::device_vector<unsigned int> row2Node(size, 0);
   thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
-  thrust::host_vector<unsigned int> fvalue_h(32);
-  thrust::device_vector<unsigned int> fvalue_d(32);
+  thrust::host_vector<unsigned short> fvalue_h(32);
+  thrust::device_vector<unsigned short> fvalue_d(32);
   float2 sum = make_float2(0.0, 0.0);
 
   thrust::device_vector<unsigned> hist_count((1 << depth) * hist_size, 0);
@@ -287,8 +287,8 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureWithTrickDynamic) {
   thrust::device_vector<unsigned int> row2Node(size, 0);
   thrust::device_vector<unsigned> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
-  thrust::host_vector<unsigned int> fvalue_h(32);
-  thrust::device_vector<unsigned int> fvalue_d(32);
+  thrust::host_vector<unsigned short> fvalue_h(32);
+  thrust::device_vector<unsigned short> fvalue_d(32);
   float2 sum = make_float2(0.0, 0.0);
 
   thrust::device_vector<unsigned> hist_count((1 << depth) * hist_size, 0);
@@ -397,8 +397,8 @@ TEST(HistTreeGrower, Level1SearchContinuousFeatureWithTrickStatic) {
   thrust::device_vector<unsigned int> row2Node(size, 0);
   thrust::device_vector<unsigned int> partitioning_indexes(size, 0);
   thrust::device_vector<float2> grad(32);
-  thrust::host_vector<unsigned int> fvalue_h(32);
-  thrust::device_vector<unsigned int> fvalue_d(32);
+  thrust::host_vector<unsigned short> fvalue_h(32);
+  thrust::device_vector<unsigned short> fvalue_d(32);
   float2 sum = make_float2(0.0, 0.0);
 
   thrust::device_vector<unsigned> hist_count((1 << depth) * hist_size, 0);
