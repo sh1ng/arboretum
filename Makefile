@@ -7,7 +7,7 @@ wheel:
 	cmake .. && \
 	$(MAKE) -j && \
 	cd ../python-package && \
-	python3 setup.py sdist bdist_wheel
+	python3 setup.py sdist bdist_wheel --plat-name=linux_x86_64
 
 .PHONY: docker_wheel
 docker_wheel:

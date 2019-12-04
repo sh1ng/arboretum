@@ -19,7 +19,7 @@ def run_regression(depth, true_values, true_model, trees=1, double_precision=Tru
     data = arboretum.DMatrix(boston.data[0:n], y=boston.target[0:n])
     y = boston.target[0:n]
 
-    config = json.dumps({'objective': 0,
+    config = {'objective': 0,
                          'method': 0,
                          'internals':
                          {
@@ -37,7 +37,7 @@ def run_regression(depth, true_values, true_model, trees=1, double_precision=Tru
                              'colsample_bylevel': 1.0,
                              'lambda': 0.0,
                              'alpha': 0.0
-                         }})
+                         }}
     model = arboretum.train(config, data, trees)
     data = arboretum.DMatrix(boston.data[0:n])
 
@@ -47,9 +47,9 @@ def run_regression(depth, true_values, true_model, trees=1, double_precision=Tru
     print(boston.target[0:n])
     print('rmse:', rmse(pred, true_values))
     assert np.allclose(pred, true_values)
-    model_json = model.dump()
-    print(model_json)
-    model = json.loads(model_json)
+    model_json_str = model.dump()
+    print(model_json_str)
+    model = json.loads(model_json_str)
     utils.assert_model(true_model, model)
 
 

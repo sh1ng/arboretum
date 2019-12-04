@@ -123,30 +123,25 @@ class Garden(object):
         self.config = config
         self.data = data
         self._init = False
-        print(config)
-        json_model = json.loads(config)
-        print(type(json_model))
-        print(json_model)
-        if 'labels_count' in json_model['tree']:
-            self.labels_count = json_model['tree']['labels_count']
+        if 'labels_count' in config['tree']:
+            self.labels_count = config['tree']['labels_count']
         else:
-            self.labels_count = 1
+            self.labels_count = self.labels_count = 1
+
+        self.config_str = json.dumps(config)
 
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeGarden(self.handle))
         if hasattr(self, 'data'):
             del self.data
 
-    def load(self, json_model):
-        if not self._init:
-            self.config = json.dumps(json_model['configuration'])
-            self.handle = ctypes.c_void_p()
+    def load(self, json_model_str):
+        json_model = json.loads(json_model_str)
+        self.handle = ctypes.c_void_p()
 
-            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config.encode('UTF-8')),
-                                                      ctypes.byref(self.handle)))
-            self._init = True
-
-        json_model_str = json.dumps(json_model)
+        _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config_str.encode('UTF-8')),
+                                                  ctypes.byref(self.handle)))
+        self._init = True
 
         _call_and_throw_if_error(_LIB.ALoadModel(
             c_char_p(json_model_str.encode('UTF-8')), self.handle))
@@ -158,7 +153,7 @@ class Garden(object):
         if not self._init:
             self.handle = ctypes.c_void_p()
 
-            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config.encode('UTF-8')),
+            _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config_str.encode('UTF-8')),
                                                       ctypes.byref(self.handle)))
             self._init = True
 
@@ -233,8 +228,9 @@ def train(config, data, num_round):
     return model
 
 
-def load(json_model):
-    config = json.dumps(json_model['configuration'])
+def load(json_model_str):
+    json_model = json.loads(json_model_str)
+    config = json_model['configuration']
     model = Garden(config)
-    model.load(json_model)
+    model.load(json_model_str)
     return model

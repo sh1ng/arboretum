@@ -18,34 +18,34 @@ if __name__ == "__main__":
 
     data = arboretum.DMatrix(data_train, y=y_train)
 
-    config = json.dumps({'objective': 0,
-                         'internals':
-                         {
-                             'double_precision': True,
-                             'compute_overlap': 1,
-                         },
-                         'verbose':
-                         {
-                             'gpu': True
-                         },
-                         'tree':
-                         {
-                             'eta': .1,
-                             'max_depth': 5,
-                             'gamma': 0.0,
-                             'min_child_weight': 2,
-                             'min_leaf_size': 2,
-                             'colsample_bytree': 1.0,
-                             'colsample_bylevel': 1.0,
-                             'lambda': 0.0,
-                             'alpha': 0.0
-                         }})
+    config = {'objective': 0,
+              'internals':
+              {
+                  'double_precision': True,
+                  'compute_overlap': 1,
+              },
+              'verbose':
+              {
+                  'gpu': True
+              },
+              'tree':
+              {
+                  'eta': .1,
+                  'max_depth': 5,
+                  'gamma': 0.0,
+                  'min_child_weight': 2,
+                  'min_leaf_size': 2,
+                  'colsample_bytree': 0.8,
+                  'colsample_bylevel': 0.8,
+                  'lambda': 0.0,
+                  'alpha': 0.0
+              }}
 
     # init model
     model = arboretum.Garden(config, data)
 
     # grow trees
-    for i in range(10):
+    for i in range(50):
         model.grow_tree()
 
     # predict on train data set
