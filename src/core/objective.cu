@@ -28,13 +28,13 @@ RegressionObjective::RegressionObjective(float initial_y)
 void RegressionObjective::UpdateGrad(
   thrust::device_vector<float> &grad,
   const thrust::device_vector<float> &y_hat_d,
-  const thrust::device_vector<float> &y_internal_d) {
-  auto func = [] __device__(float y_hat, float y) { return y_hat - y; };
+  const thrust::device_vector<float> &y_d) {
+  auto func = [] __device__(float y_hat, float y) { return y - y_hat; };
   int gridSize = (grad.size() + MAX_THREADS - 1) / MAX_THREADS;
   update_grad<<<gridSize, MAX_THREADS>>>(
     thrust::raw_pointer_cast(grad.data()),
     thrust::raw_pointer_cast(y_hat_d.data()),
-    thrust::raw_pointer_cast(y_internal_d.data()), func, grad.size());
+    thrust::raw_pointer_cast(y_d.data()), func, grad.size());
 }
 
 LogisticRegressionObjective::LogisticRegressionObjective(float initial_y)
@@ -43,16 +43,16 @@ LogisticRegressionObjective::LogisticRegressionObjective(float initial_y)
 void LogisticRegressionObjective::UpdateGrad(
   thrust::device_vector<float2> &grad,
   const thrust::device_vector<float> &y_hat_d,
-  const thrust::device_vector<float> &y_internal_d) {
+  const thrust::device_vector<float> &y_d) {
   int gridSize = (grad.size() + MAX_THREADS - 1) / MAX_THREADS;
   auto func = [=] __device__(float y_hat, float y) {
-    const float sigmoid = Sigmoid(y);
-    return make_float2(y_hat - sigmoid, sigmoid * (1.0f - sigmoid));
+    const float sigmoid = Sigmoid(y_hat);
+    return make_float2(y - sigmoid, sigmoid * (1.0f - sigmoid));
   };
   update_grad<<<gridSize, MAX_THREADS>>>(
     thrust::raw_pointer_cast(grad.data()),
     thrust::raw_pointer_cast(y_hat_d.data()),
-    thrust::raw_pointer_cast(y_internal_d.data()), func, grad.size());
+    thrust::raw_pointer_cast(y_d.data()), func, grad.size());
 }
 
 SoftMaxObjective::SoftMaxObjective(unsigned char labels_count, float initial_y)
@@ -88,10 +88,9 @@ SoftMaxObjective::SoftMaxObjective(unsigned char labels_count, float initial_y)
 //     }
 // }
 
-void SoftMaxObjective::UpdateGrad(
-  thrust::device_vector<float2> &grad,
-  const thrust::device_vector<float> &y_hat_d,
-  const thrust::device_vector<float> &y_internal_d) {
+void SoftMaxObjective::UpdateGrad(thrust::device_vector<float2> &grad,
+                                  const thrust::device_vector<float> &y_hat_d,
+                                  const thrust::device_vector<float> &y_d) {
   //   auto func = [] __device__(float y_hat, float y) { return y_hat - y; };
 
   //   update_grad<<<gridSize, blockSize>>>(

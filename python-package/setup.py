@@ -9,7 +9,8 @@ sys.path.insert(0, '.')
 
 setup(name='arboretum',
       version='0.1',
-      description='',
+      description='Gradient Boosting powered by GPU(NVIDIA CUDA)',
+      long_description='Gradient Boosting implementation with focus on overcoming GRAM size limit',
       install_requires=[
           'numpy',
           'scipy',
@@ -19,5 +20,15 @@ setup(name='arboretum',
       zip_safe=False,
       packages=find_packages(),
       include_package_data=True,
-      data_files=[('arboretum', [ '../build/libarboretum.so'])],
-      url='https://github.com/sh1ng/arboretum')
+      data_files=[('arboretum', ['../build/libarboretum.so'])],
+      url='https://github.com/sh1ng/arboretum',
+      python_requires='>=3.5',
+      classifiers=['License :: OSI Approved :: Apache Software License',
+                   'Development Status :: 3 - Alpha',
+                   'Operating System :: POSIX :: Linux',
+                   'Programming Language :: C++',
+                   'Programming Language :: Python',
+                   'Programming Language :: Python :: 3',
+                   'Programming Language :: Python :: 3.5',
+                   'Programming Language :: Python :: 3.6',
+                   'Programming Language :: Python :: 3.7'],)

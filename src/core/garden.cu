@@ -97,9 +97,9 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     _bestSplit.resize(1 << (param.depth - 2));
     _nodeStat.resize(1 << (param.depth - 2));
     grad.resize(data->rows);
-    y_internal.resize(data->rows, objective->IntoInternal(param.initial_y));
-    y_internal_d = y_internal;
+    data->y_hat.resize(data->rows, objective->IntoInternal(param.initial_y));
     y_hat_d = data->y_hat;
+    y_d = data->y;
 
     growers = new TREE_GROWER *[overlap_depth];
 
@@ -197,7 +197,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
                           update_by_last_tree<SUM_T, NODE_T>);
 
     update_by_last_tree<SUM_T, NODE_T><<<gridSize, blockSize>>>(
-      thrust::raw_pointer_cast(y_internal_d.data()),
+      thrust::raw_pointer_cast(y_hat_d.data()),
       thrust::raw_pointer_cast(this->best.sum.data()),
       thrust::raw_pointer_cast(this->best.count.data()),
       thrust::raw_pointer_cast(this->best.parent_node_sum.data()),
@@ -212,7 +212,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   }
 
   virtual void UpdateGrad() override {
-    objective->UpdateGrad(grad, y_hat_d, y_internal_d);
+    objective->UpdateGrad(grad, y_hat_d, y_d);
   }
 
  private:
@@ -235,9 +235,8 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   BestSplit<SUM_T> best;
   Histogram<SUM_T> features_histograms;
   device_vector<GRAD_T> grad;
-  host_vector<float> y_internal;
+  device_vector<float> y_d;
   device_vector<float> y_hat_d;
-  device_vector<float> y_internal_d;
 
   void FindBestSplits(const unsigned int level, io::DataMatrix *data) {
     unsigned length = 1 << level;
@@ -266,10 +265,10 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
       growers[0]->template Partition<GRAD_T>(
         thrust::raw_pointer_cast(grad.data()), partitioning_index);
       growers[0]->template Partition<float>(
-        thrust::raw_pointer_cast(y_internal_d.data()), partitioning_index);
+        thrust::raw_pointer_cast(y_hat_d.data()), partitioning_index);
 
       growers[0]->template Partition<float>(
-        thrust::raw_pointer_cast(y_hat_d.data()), partitioning_index);
+        thrust::raw_pointer_cast(y_d.data()), partitioning_index);
     }
 
     OK(cudaStreamSynchronize(growers[0]->stream));
@@ -973,15 +972,13 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
 }
 
 void Garden::UpdateByLastTree(io::DataMatrix *data) {
-  // TODO: implement
-  //   if (_builder- y_internal.size() == 0)
-  //     y_internal.resize(data->rows * cfg.tree_param.labels_count,
-  //                       _objective->IntoInternal(cfg.tree_param.initial_y));
-  //   for (auto it = _trees.end() - cfg.tree_param.labels_count; it !=
-  //   _trees.end();
-  //        ++it) {
-  //     (*it)->Predict(data, y_internal);
-  //   }
+  if (data->y_hat.size() == 0)
+    data->y_hat.resize(data->rows * cfg.tree_param.labels_count,
+                       _objective->IntoInternal(cfg.tree_param.initial_y));
+  for (auto it = _trees.end() - cfg.tree_param.labels_count; it != _trees.end();
+       ++it) {
+    (*it)->Predict(data, data->y_hat);
+  }
 }
 
 void Garden::GetY(arboretum::io::DataMatrix *data,

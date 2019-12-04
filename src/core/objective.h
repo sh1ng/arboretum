@@ -32,26 +32,24 @@ class ApproximatedObjective : public ApproximatedObjectiveBase {
   ApproximatedObjective() : ApproximatedObjectiveBase() {}
   virtual void UpdateGrad(thrust::device_vector<grad_type> &grad,
                           const thrust::device_vector<float> &y_hat_d,
-                          const thrust::device_vector<float> &y_internal_d) = 0;
+                          const thrust::device_vector<float> &y_d) = 0;
 };
 
 class RegressionObjective : public ApproximatedObjective<float> {
  public:
   RegressionObjective(float initial_y);
-  virtual void UpdateGrad(
-    thrust::device_vector<float> &grad,
-    const thrust::device_vector<float> &y_hat_d,
-    const thrust::device_vector<float> &y_internal_d) override;
+  virtual void UpdateGrad(thrust::device_vector<float> &grad,
+                          const thrust::device_vector<float> &y_hat_d,
+                          const thrust::device_vector<float> &y_d) override;
   //   virtual void UpdateGrad() override;
 };
 
 class LogisticRegressionObjective : public ApproximatedObjective<float2> {
  public:
   LogisticRegressionObjective(float initial_y);
-  virtual void UpdateGrad(
-    thrust::device_vector<float2> &grad,
-    const thrust::device_vector<float> &y_hat_d,
-    const thrust::device_vector<float> &y_internal_d) override;
+  virtual void UpdateGrad(thrust::device_vector<float2> &grad,
+                          const thrust::device_vector<float> &y_hat_d,
+                          const thrust::device_vector<float> &y_d) override;
   //   virtual void UpdateGrad() override;
 
   virtual inline float IntoInternal(float v) override {
@@ -74,10 +72,9 @@ class LogisticRegressionObjective : public ApproximatedObjective<float2> {
 class SoftMaxObjective : public ApproximatedObjective<float2> {
  public:
   SoftMaxObjective(unsigned char labels_count, float initial_y);
-  virtual void UpdateGrad(
-    thrust::device_vector<float2> &grad,
-    const thrust::device_vector<float> &y_hat_d,
-    const thrust::device_vector<float> &y_internal_d) override;
+  virtual void UpdateGrad(thrust::device_vector<float2> &grad,
+                          const thrust::device_vector<float> &y_hat_d,
+                          const thrust::device_vector<float> &y_d) override;
   //   virtual void UpdateGrad() override;
   virtual inline float IntoInternal(float v) override { return v; }
   virtual inline void FromInternal(thrust::host_vector<float> &in,

@@ -119,14 +119,18 @@ class DMatrix(object):
 
 
 class Garden(object):
-    _objectives = {
-        'reg:linear': 0,
-        'reg:logistic': 1
-    }
-
-    def __init__(self, config):
+    def __init__(self, config, data=None):
         self.config = config
+        self.data = data
         self._init = False
+        print(config)
+        json_model = json.loads(config)
+        print(type(json_model))
+        print(json_model)
+        if 'labels_count' in json_model['tree']:
+            self.labels_count = json_model['tree']['labels_count']
+        else:
+            self.labels_count = 1
 
     def __del__(self):
         _call_and_throw_if_error(_LIB.AFreeGarden(self.handle))
@@ -136,7 +140,6 @@ class Garden(object):
     def load(self, json_model):
         if not self._init:
             self.config = json.dumps(json_model['configuration'])
-            self.labels_count = json_model['configuration']['tree']['labels_count']
             self.handle = ctypes.c_void_p()
 
             _call_and_throw_if_error(_LIB.AInitGarden(ctypes.c_char_p(self.config.encode('UTF-8')),
@@ -231,6 +234,7 @@ def train(config, data, num_round):
 
 
 def load(json_model):
-    model = Garden(None)
+    config = json.dumps(json_model['configuration'])
+    model = Garden(config)
     model.load(json_model)
     return model

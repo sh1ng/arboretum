@@ -29,6 +29,7 @@ class DataMatrix {
   std::vector<thrust::device_vector<unsigned short>> data_category_device;
   std::vector<thrust::device_vector<unsigned short>> sorted_data_device;
 
+  thrust::host_vector<float> y;
   thrust::host_vector<float> y_hat;
   std::vector<unsigned char> labels;
   std::vector<unsigned char> reduced_size;

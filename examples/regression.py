@@ -21,7 +21,8 @@ if __name__ == "__main__":
     config = json.dumps({'objective': 0,
                          'internals':
                          {
-                             'double_precision': True
+                             'double_precision': True,
+                             'compute_overlap': 1,
                          },
                          'verbose':
                          {
@@ -29,7 +30,7 @@ if __name__ == "__main__":
                          },
                          'tree':
                          {
-                             'eta': 1.0,
+                             'eta': .1,
                              'max_depth': 5,
                              'gamma': 0.0,
                              'min_child_weight': 2,
@@ -44,7 +45,7 @@ if __name__ == "__main__":
     model = arboretum.Garden(config, data)
 
     # grow trees
-    for i in range(200):
+    for i in range(10):
         model.grow_tree()
 
     # predict on train data set

@@ -39,11 +39,11 @@ extern "C" const char *ACreateFromDenseMatrix(const float *data,
 extern "C" const char *ASetY(VoidPointer data, const float *y) {
   try {
     DataMatrix *data_ptr = static_cast<DataMatrix *>(data);
-    data_ptr->y_hat.resize(data_ptr->rows, 0);
+    data_ptr->y.resize(data_ptr->rows);
 
 #pragma omp parallel for
     for (size_t i = 0; i < data_ptr->rows; ++i) {
-      data_ptr->y_hat[i] = y[i];
+      data_ptr->y[i] = y[i];
     }
 
     return NULL;
