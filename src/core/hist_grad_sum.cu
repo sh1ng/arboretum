@@ -180,7 +180,7 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
   BlockScanCount(temp_storage.scan_count[warp_id])
     .ExclusiveScan(count_current, count, 0, cub::Sum());
 
-  // key - segment idx, value - segment value
+  // key - segment idx(thread idx), value - bin
   cub::KeyValuePair<unsigned short, unsigned short> segment_start(threadIdx.x,
                                                                   key);
 

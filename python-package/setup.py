@@ -4,11 +4,10 @@ from __future__ import absolute_import
 import sys
 import os
 from setuptools import setup, find_packages
-#import subprocess
 sys.path.insert(0, '.')
 
 setup(name='arboretum',
-      version='0.1',
+      version='0.1a2',
       description='Gradient Boosting powered by GPU(NVIDIA CUDA)',
       long_description='Gradient Boosting implementation with focus on overcoming GRAM size limit',
       install_requires=[
@@ -20,7 +19,6 @@ setup(name='arboretum',
       zip_safe=False,
       packages=find_packages(),
       include_package_data=True,
-      data_files=[('arboretum', ['../build/libarboretum.so'])],
       url='https://github.com/sh1ng/arboretum',
       python_requires='>=3.5',
       classifiers=['License :: OSI Approved :: Apache Software License',
