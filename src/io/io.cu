@@ -6,11 +6,42 @@
 #include <functional>
 #include <unordered_set>
 #include <vector>
+#include "core/cuda_helpers.h"
+#include "cub/cub.cuh"
 #include "io.h"
 
 namespace arboretum {
 namespace io {
 using namespace std;
+
+#define ITEMS 8
+
+template <int ITEMS_PER_THREAD>
+__global__ void build_histogram(unsigned short *bin, float *threshold,
+                                const float *fvalue_unique, const float *fvalue,
+                                const int hist_size, const int unique_size,
+                                const size_t n) {
+  extern __shared__ float values[];
+  const int size = min(unique_size, hist_size);
+  if (threadIdx.x < hist_size) {
+    values[threadIdx.x] = INFINITY;
+    unsigned idx = (threadIdx.x + 1) * unique_size / size;
+    if (threadIdx.x < size - 1)
+      values[threadIdx.x] = (fvalue_unique[idx] + fvalue_unique[idx - 1]) * 0.5;
+  }
+
+  __syncthreads();
+
+#pragma unroll
+  for (unsigned i = 0; i < ITEMS_PER_THREAD; ++i) {
+    unsigned idx =
+      blockDim.x * blockIdx.x * ITEMS_PER_THREAD + i * blockDim.x + threadIdx.x;
+    if (idx < n) bin[idx] = lower_bound<float>(values, fvalue[idx], size);
+  }
+
+  if (blockIdx.x == 0 && threadIdx.x < size)
+    threshold[threadIdx.x] = values[threadIdx.x];
+}
 
 DataMatrix::DataMatrix(int rows, int columns, int columns_category)
     : rows(rows),
@@ -38,34 +69,54 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
 void DataMatrix::InitHist(int hist_size, bool verbose) {
   if (!_init) {
     thrust::host_vector<thrust::host_vector<float>> thresholds(columns_dense);
-    for (size_t i = 0; i < columns_dense; ++i) {
-      thresholds[i].resize(hist_size, std::numeric_limits<float>::infinity());
-      thrust::device_vector<float> d_data = data[i];
-      thrust::sort(d_data.begin(), d_data.end());
+    thrust::device_vector<float> d_data(rows);
+    thrust::device_vector<float> d_data_sorted(rows);
+    thrust::device_vector<unsigned short> bin(rows);
+    thrust::device_vector<float> d_threshold(hist_size);
 
-      auto n = thrust::unique(d_data.begin(), d_data.end());
-      int size = std::min(static_cast<int>(n - d_data.begin()), hist_size);
+    void *d_temp_storage = NULL;
+    size_t temp_storage_bytes = 0;
+
+    cub::DeviceRadixSort::SortKeys(
+      d_temp_storage, temp_storage_bytes,
+      thrust::raw_pointer_cast(d_data.data()),
+      thrust::raw_pointer_cast(d_data_sorted.data()), rows);
+
+    cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+    for (size_t i = 0; i < columns_dense; ++i) {
+      thrust::copy(data[i].begin(), data[i].end(), d_data.begin());
+
+      cub::DeviceRadixSort::SortKeys(
+        d_temp_storage, temp_storage_bytes,
+        thrust::raw_pointer_cast(d_data.data()),
+        thrust::raw_pointer_cast(d_data_sorted.data()), rows);
+
+      auto n = thrust::unique(d_data_sorted.begin(), d_data_sorted.end());
+      int unique_size = n - d_data_sorted.begin();
+
+      int size = std::min(unique_size, hist_size);
       reduced_size[i] = 32 - __builtin_clz(size);
       data_reduced_mapping[i].resize(size);
-      for (auto j = 0; j < size - 1; ++j) {
-        auto offset = (j + 1) * (n - d_data.begin()) / size;
-        thresholds[i][j] = (d_data[offset] + d_data[offset - 1]) * 0.5;
-      }
+      int grid_size = (rows + 1024 * ITEMS - 1) / (1024 * ITEMS);
+      build_histogram<ITEMS><<<grid_size, 1024, hist_size * sizeof(float)>>>(
+        thrust::raw_pointer_cast(bin.data()),
+        thrust::raw_pointer_cast(d_threshold.data()),
+        thrust::raw_pointer_cast(d_data_sorted.data()),
+        thrust::raw_pointer_cast(d_data.data()), hist_size, unique_size, rows);
 
-      data_reduced_mapping[i].assign(thresholds[i].begin(),
-                                     thresholds[i].end());
-    }
-#pragma omp parallel for
-    for (size_t i = 0; i < columns_dense; ++i) {
+      OK(cudaDeviceSynchronize());
+
+      thrust::copy(d_threshold.begin(), d_threshold.begin() + size,
+                   data_reduced_mapping[i].begin());
+
       data_reduced[i].resize(rows);
-      for (size_t j = 0; j < rows; ++j) {
-        vector<float>::iterator indx =
-          std::lower_bound(data_reduced_mapping[i].begin(),
-                           data_reduced_mapping[i].end(), data[i][j]);
-        unsigned short idx = indx - data_reduced_mapping[i].begin();
-        data_reduced[i][j] = idx;
-      }
+
+      thrust::copy(bin.begin(), bin.end(), data_reduced[i].begin());
     }
+
+    OK(cudaFree(d_temp_storage));
+
     for (size_t i = 0; i < columns_dense && verbose; ++i) {
       printf("feature %lu has been reduced to %u bits \n", i, reduced_size[i]);
     }

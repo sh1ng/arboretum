@@ -204,4 +204,21 @@ __forceinline__ __host__ __device__ T binary_search(const T *sorted_segments,
   return left - 1;
 }
 
+template <class T>
+__forceinline__ __host__ __device__ unsigned lower_bound(const T *values,
+                                                         const T x,
+                                                         const int size) {
+  unsigned l = 0;
+  unsigned h = size;  // Not n - 1
+  while (l < h) {
+    unsigned mid = (l + h) / 2;
+    if (x <= values[mid]) {
+      h = mid;
+    } else {
+      l = mid + 1;
+    }
+  }
+  return l;
+}
+
 #endif  // SRC_CORE_CUDA_HELPERS_H
