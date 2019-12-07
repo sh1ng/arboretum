@@ -15,7 +15,8 @@ class HistTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
                  const InternalConfiguration *config);
 
   static void HistSum(SUM_T *sum, unsigned *bin_count,
-                      const SUM_T *hist_sum_parent,
+                      unsigned short *fvalue_partitioned,
+                      const unsigned *position, const SUM_T *hist_sum_parent,
                       const unsigned *hist_count_parent, const GRAD_T *grad,
                       const unsigned *node_size, const unsigned short *fvalue,
                       const unsigned hist_size_bits, const unsigned hist_size,

@@ -82,7 +82,7 @@ class PartitioningIndexIterator {
     else
       idx = node_size[segment + 2] - (offset_ - node_size[segment] - v.x + 1);
 
-    index[offset_] = idx;
+    index[idx] = offset_;
   }
 };
 

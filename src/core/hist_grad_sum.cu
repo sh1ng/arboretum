@@ -5,10 +5,11 @@
 
 template <typename SUM_T>
 __global__ void update_multi_node(
-  SUM_T *sum_dst, unsigned *count_dst, const SUM_T *hist_sum_parent,
-  const unsigned *hist_count_parent_count, const SUM_T *sum_src,
-  const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
-  const unsigned hist_size, const unsigned n) {
+  SUM_T *sum_dst, unsigned *count_dst, const unsigned *position,
+  const SUM_T *hist_sum_parent, const unsigned *hist_count_parent_count,
+  const SUM_T *sum_src, const unsigned *count_src,
+  const unsigned *__restrict__ parent_count_iter, const unsigned hist_size,
+  const unsigned n) {
   for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     int parent_node_id = i / hist_size;
@@ -33,28 +34,32 @@ __global__ void update_multi_node(
 }
 
 template __global__ void update_multi_node<float>(
-  float *sum_dst, unsigned *count_dst, const float *hist_sum_parent,
-  const unsigned *hist_count_parent_count, const float *sum_src,
-  const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
-  const unsigned hist_size, const unsigned n);
+  float *sum_dst, unsigned *count_dst, const unsigned *position,
+  const float *hist_sum_parent, const unsigned *hist_count_parent_count,
+  const float *sum_src, const unsigned *count_src,
+  const unsigned *__restrict__ parent_count_iter, const unsigned hist_size,
+  const unsigned n);
 
 template __global__ void update_multi_node<double>(
-  double *sum_dst, unsigned *count_dst, const double *hist_sum_parent,
-  const unsigned *hist_count_parent_count, const double *sum_src,
-  const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
-  const unsigned hist_size, const unsigned n);
+  double *sum_dst, unsigned *count_dst, const unsigned *position,
+  const double *hist_sum_parent, const unsigned *hist_count_parent_count,
+  const double *sum_src, const unsigned *count_src,
+  const unsigned *__restrict__ parent_count_iter, const unsigned hist_size,
+  const unsigned n);
 
 template __global__ void update_multi_node<float2>(
-  float2 *sum_dst, unsigned *count_dst, const float2 *hist_sum_parent,
-  const unsigned *hist_count_parent_count, const float2 *sum_src,
-  const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
-  const unsigned hist_size, const unsigned n);
+  float2 *sum_dst, unsigned *count_dst, const unsigned *position,
+  const float2 *hist_sum_parent, const unsigned *hist_count_parent_count,
+  const float2 *sum_src, const unsigned *count_src,
+  const unsigned *__restrict__ parent_count_iter, const unsigned hist_size,
+  const unsigned n);
 
 template __global__ void update_multi_node<mydouble2>(
-  mydouble2 *sum_dst, unsigned *count_dst, const mydouble2 *hist_sum_parent,
-  const unsigned *hist_count_parent_count, const mydouble2 *sum_src,
-  const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
-  const unsigned hist_size, const unsigned n);
+  mydouble2 *sum_dst, unsigned *count_dst, const unsigned *position,
+  const mydouble2 *hist_sum_parent, const unsigned *hist_count_parent_count,
+  const mydouble2 *sum_src, const unsigned *count_src,
+  const unsigned *__restrict__ parent_count_iter, const unsigned hist_size,
+  const unsigned n);
 
 template <typename SUM_T>
 __global__ void update(SUM_T *sum_dst, unsigned *count_dst,
@@ -255,7 +260,8 @@ hist_sum_node<mydouble2, float2, HIST_SUM_ITEMS_PER_THREAD>(
 
 template <typename SUM_T, typename GRAD_T, int ITEMS_PER_THREAD>
 __global__ void hist_sum_multi_node(
-  SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
+  SUM_T *dst_sum, unsigned *dst_count, unsigned short *fvalue_partitioned,
+  const unsigned *position, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
@@ -321,8 +327,13 @@ __global__ void hist_sum_multi_node(
                      i * HIST_SUM_BLOCK_DIM + threadIdx.x;
 
       if (idx < node_size) {
-        thread_keys[i] = bin[idx + node_start];
+        printf("write to %u \n", idx + node_start);
+        printf("read from %u\n", position[idx + node_start]);
+
+        fvalue_partitioned[idx + node_start] = thread_keys[i] =
+          bin[position[idx + node_start]];
         thread_values[i] = values[idx + node_start];
+
       } else {
         thread_keys[i] = HIST_SUM_NO_DATA;
       }
@@ -422,28 +433,32 @@ __global__ void hist_sum_multi_node(
 }
 
 template __global__ void hist_sum_multi_node<float, float>(
-  float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
+  float *dst_sum, unsigned *dst_count, unsigned short *fvalue_partitioned,
+  const unsigned *position, const float *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template __global__ void hist_sum_multi_node<float2, float2>(
-  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
+  float2 *dst_sum, unsigned *dst_count, unsigned short *fvalue_partitioned,
+  const unsigned *position, const float2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template __global__ void hist_sum_multi_node<double, float>(
-  double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
+  double *dst_sum, unsigned *dst_count, unsigned short *fvalue_partitioned,
+  const unsigned *position, const double *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
 
 template __global__ void hist_sum_multi_node<mydouble2, float2>(
-  mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
+  mydouble2 *dst_sum, unsigned *dst_count, unsigned short *fvalue_partitioned,
+  const unsigned *position, const mydouble2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,

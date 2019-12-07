@@ -190,7 +190,8 @@ HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistTreeGrower(
 
 template <typename NODE_T, typename GRAD_T, typename SUM_T>
 void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
-  SUM_T *sum, unsigned *bin_count, const SUM_T *hist_sum_parent,
+  SUM_T *sum, unsigned *bin_count, unsigned short *fvalue_partitioned,
+  const unsigned *position, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *grad,
   const unsigned *node_size, const unsigned short *fvalue,
   const unsigned hist_size_bits, const unsigned hist_size, const unsigned size,
@@ -205,21 +206,23 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
 
   if (use_trick) {
     hist_sum_multi_node<SUM_T, GRAD_T><<<gridSize / 2, blockSize, 0, stream>>>(
-      sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
-      fvalue, hist_size, hist_size_bits, blocks_per_node, use_trick);
+      sum, bin_count, fvalue_partitioned, position, hist_sum_parent,
+      hist_count_parent, grad, node_size, fvalue, hist_size, hist_size_bits,
+      blocks_per_node, use_trick);
 
     const unsigned block_size = 1024;
     const unsigned grid_size =
       (hist_size * size / 2 + block_size - 1) / block_size;
 
     update_multi_node<SUM_T><<<grid_size, block_size, 0, stream>>>(
-      sum, bin_count, hist_sum_parent, hist_count_parent, sum, bin_count,
-      node_size, hist_size, hist_size * size / 2);
+      sum, bin_count, position, hist_sum_parent, hist_count_parent, sum,
+      bin_count, node_size, hist_size, hist_size * size / 2);
 
   } else {
     hist_sum_multi_node<SUM_T, GRAD_T><<<gridSize, blockSize, 0, stream>>>(
-      sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
-      fvalue, hist_size, hist_size_bits, blocks_per_node, use_trick);
+      sum, bin_count, fvalue_partitioned, position, hist_sum_parent,
+      hist_count_parent, grad, node_size, fvalue, hist_size, hist_size_bits,
+      blocks_per_node, use_trick);
   }
 }
 
@@ -335,8 +338,8 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   }
 
   if (level != 0) {
-    this->PartitionByIndex(thrust::raw_pointer_cast(this->fvalue_dst.data()),
-                           fvalue_tmp, partitioning_index);
+    // this->PartitionByIndex(thrust::raw_pointer_cast(this->fvalue_dst.data()),
+    //                        fvalue_tmp, partitioning_index);
 
     OK(cudaEventRecord(this->event, this->stream));
 
@@ -363,20 +366,35 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
     HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
       thrust::raw_pointer_cast(this->sum.data()),
       thrust::raw_pointer_cast(this->hist_bin_count.data()),
+      thrust::raw_pointer_cast(this->fvalue_dst.data()),
+      thrust::raw_pointer_cast(partitioning_index.data()),
       thrust::raw_pointer_cast(this->features_histogram->grad_hist[fid].data()),
       thrust::raw_pointer_cast(
         this->features_histogram->count_hist[fid].data()),
       thrust::raw_pointer_cast(grad_d.data()),
-      thrust::raw_pointer_cast(parent_node_count.data()),
-      this->d_fvalue_partitioned, hist_size_bits, hist_size, length,
+      thrust::raw_pointer_cast(parent_node_count.data()), fvalue_tmp,
+      hist_size_bits, hist_size, length,
       this->features_histogram->CanUseTrick(fid, level), this->stream);
+    OK(cudaStreamSynchronize(this->stream));
   } else {
     HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
       thrust::raw_pointer_cast(this->sum.data()),
       thrust::raw_pointer_cast(this->hist_bin_count.data()),
       thrust::raw_pointer_cast(grad_d.data()),
-      thrust::raw_pointer_cast(parent_node_count.data()),
-      this->d_fvalue_partitioned, hist_size_bits, this->size, this->stream);
+      thrust::raw_pointer_cast(parent_node_count.data()), fvalue_tmp,
+      hist_size_bits, this->size, this->stream);
+  }
+
+  if (fvalue_d.empty()) {
+    //   OK(cudaMemcpyAsync(fvalue_h,
+    //                      thrust::raw_pointer_cast(this->fvalue_dst.data()),
+    //                      this->size * sizeof(unsigned short),
+    //                      cudaMemcpyDeviceToHost, this->copy_d2h_stream));
+    //   this->d_fvalue_partitioned =
+    //     thrust::raw_pointer_cast(this->fvalue_dst.data());
+  } else {
+    this->fvalue_dst.swap(fvalue_d);
+    //   this->d_fvalue_partitioned = thrust::raw_pointer_cast(fvalue_d.data());
   }
   cub::Sum sum_op;
 

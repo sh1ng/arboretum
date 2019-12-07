@@ -67,12 +67,12 @@ __forceinline__ __device__ unsigned long long int updateAtomicMax(
 }
 
 template <class T1>
-__global__ void scatter_kernel(const unsigned int *const __restrict__ position,
+__global__ void gather_kernel(const unsigned int *const __restrict__ position,
                                const T1 *const __restrict__ in, T1 *out,
                                const size_t n) {
   for (size_t i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
-    out[position[i]] = in[i];
+    out[i] = in[position[i]];
   }
 }
 
@@ -287,7 +287,7 @@ class BaseGrower {
                           gain_kernel<SUM_T, NODE_T>);
 
     compute1DInvokeConfig(size, &gridSizeGather, &blockSizeGather,
-                          scatter_kernel<NODE_T>);
+                          gather_kernel<NODE_T>);
 
     PartitioningLeafs<NODE_T> conversion_op(0);
 
@@ -370,7 +370,7 @@ class BaseGrower {
 
   template <typename T>
   void PartitionByIndex(T *dst, T *src, const device_vector<unsigned> &index) {
-    scatter_kernel<T><<<gridSizeGather, blockSizeGather, 0, stream>>>(
+    gather_kernel<T><<<gridSizeGather, blockSizeGather, 0, stream>>>(
       thrust::raw_pointer_cast(index.data()), src, dst, index.size());
   }
 
