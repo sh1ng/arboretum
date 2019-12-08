@@ -97,9 +97,11 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     _bestSplit.resize(1 << (param.depth - 2));
     _nodeStat.resize(1 << (param.depth - 2));
     grad.resize(data->rows);
+    grad_buffer.resize(data->rows);
     data->y_hat.resize(data->rows, objective->IntoInternal(param.initial_y));
     y_hat_d = data->y_hat;
     y_d = data->y;
+    y_buffer.resize(data->rows);
 
     growers = new TREE_GROWER *[overlap_depth];
 
@@ -235,6 +237,8 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   BestSplit<SUM_T> best;
   Histogram<SUM_T> features_histograms;
   device_vector<GRAD_T> grad;
+  device_vector<GRAD_T> grad_buffer;
+  device_vector<float> y_buffer;
   device_vector<float> y_d;
   device_vector<float> y_hat_d;
 
@@ -260,15 +264,29 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
                                             this->best.parent_node_count, level,
                                             param.depth);
 
-      //   OK(cudaStreamSynchronize(growers[0]->stream));
-
-      growers[0]->template Partition<GRAD_T>(
+      growers[0]->template PartitionByIndex<GRAD_T>(
+        thrust::raw_pointer_cast(grad_buffer.data()),
         thrust::raw_pointer_cast(grad.data()), partitioning_index);
-      growers[0]->template Partition<float>(
+
+      OK(cudaStreamSynchronize(growers[0]->stream));
+
+      grad.swap(grad_buffer);
+
+      growers[0]->template PartitionByIndex<float>(
+        thrust::raw_pointer_cast(y_buffer.data()),
         thrust::raw_pointer_cast(y_hat_d.data()), partitioning_index);
 
-      growers[0]->template Partition<float>(
+      OK(cudaStreamSynchronize(growers[0]->stream));
+
+      y_buffer.swap(y_hat_d);
+
+      growers[0]->template PartitionByIndex<float>(
+        thrust::raw_pointer_cast(y_buffer.data()),
         thrust::raw_pointer_cast(y_d.data()), partitioning_index);
+
+      OK(cudaStreamSynchronize(growers[0]->stream));
+
+      y_buffer.swap(y_d);
     }
 
     OK(cudaStreamSynchronize(growers[0]->stream));

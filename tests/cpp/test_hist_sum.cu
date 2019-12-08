@@ -70,7 +70,7 @@ TEST(SingleNodeHistSumFloat, SingleSegment) {
 }
 
 TEST(SingleNodeHistSumFloat, SingleSegmentFullSize) {
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<float> sum(size, 0.0);
@@ -163,7 +163,7 @@ TEST(SingleNodeHistSumDouble, SingleSegment) {
 }
 
 TEST(SingleNodeHistSumDouble, SingleSegmentFullSize) {
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(size, 0.0);
@@ -196,7 +196,7 @@ TEST(SingleNodeHistSumDouble, SingleSegmentFullSize) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesNoTrick) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
@@ -239,7 +239,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesNoTrick) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricNoTrick) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
@@ -292,7 +292,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricNoTrick) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
@@ -353,7 +353,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick2) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
@@ -414,7 +414,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick2) {
 
 TEST(MultiNodeHistSumDouble, SingleSegmentWithTrick) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * HIST_SUM_ITEMS_PER_THREAD;
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);

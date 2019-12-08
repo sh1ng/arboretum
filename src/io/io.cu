@@ -52,7 +52,11 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
   data.resize(columns);
   data_category_device.resize(columns_category);
   sorted_data_device.resize(columns);
-  data_reduced.resize(columns);
+  data_reduced.resize(
+    columns,
+    thrust::host_vector<
+      unsigned short,
+      thrust::cuda::experimental::pinned_allocator<unsigned short>>(rows));
   reduced_size.resize(columns);
   category_size.resize(columns_category);
   data_reduced_mapping.resize(columns);
@@ -110,7 +114,7 @@ void DataMatrix::InitHist(int hist_size, bool verbose) {
       thrust::copy(d_threshold.begin(), d_threshold.begin() + size,
                    data_reduced_mapping[i].begin());
 
-      data_reduced[i].resize(rows);
+      //   data_reduced[i].resize(rows);
 
       thrust::copy(bin.begin(), bin.end(), data_reduced[i].begin());
     }

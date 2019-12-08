@@ -230,25 +230,22 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
   }
 }
 
-template __global__ void hist_sum_node<float, float, HIST_SUM_ITEMS_PER_THREAD>(
+template __global__ void hist_sum_node<float, float>(
   float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
-template __global__ void
-hist_sum_node<double, float, HIST_SUM_ITEMS_PER_THREAD>(
+template __global__ void hist_sum_node<double, float>(
   double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
-template __global__ void
-hist_sum_node<float2, float2, HIST_SUM_ITEMS_PER_THREAD>(
+template __global__ void hist_sum_node<float2, float2>(
   float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
 
-template __global__ void
-hist_sum_node<mydouble2, float2, HIST_SUM_ITEMS_PER_THREAD>(
+template __global__ void hist_sum_node<mydouble2, float2>(
   mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
@@ -448,84 +445,6 @@ template __global__ void hist_sum_multi_node<mydouble2, float2>(
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node, const bool use_trick);
-
-template <typename SUM_T, typename GRAD_T>
-__global__ void hist_sum_dynamic(
-  SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
-  const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned hist_size_bits, const bool use_trick, const size_t n) {
-  for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
-       i += gridDim.x * blockDim.x) {
-    constexpr unsigned threads = HIST_SUM_BLOCK_DIM;
-    constexpr unsigned block_size = threads * HIST_SUM_ITEMS_PER_THREAD;
-    const unsigned parent_idx = i / 2;
-    const unsigned node_start = parent_count_iter[i];
-    const unsigned node_size = parent_count_iter[i + 1] - parent_count_iter[i];
-    const unsigned parent_size =
-      parent_count_iter[parent_idx * 2 + 2] - parent_count_iter[parent_idx * 2];
-
-    const bool invoke =
-      !use_trick || ((node_size * 2 < parent_size) ||
-                     (node_size * 2 == parent_size && i % 2 == 0));
-
-    if (invoke && node_size != 0) {
-      const unsigned grid_size = (node_size + block_size - 1) / block_size;
-      cudaStream_t s;
-      DEVICE_OK(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking));
-
-      hist_sum_node<SUM_T, GRAD_T, HIST_SUM_ITEMS_PER_THREAD>
-        <<<grid_size, threads, 0, s>>>(
-          dst_sum + i * hist_size, dst_count + i * hist_size,
-          values + node_start, bin + node_start, hist_size_bits, i, node_size);
-      //   DEVICE_OK(cudaGetLastError());
-      DEVICE_OK(cudaDeviceSynchronize());
-
-      DEVICE_OK(cudaStreamDestroy(s));
-    }
-
-    if (use_trick && invoke) {
-      unsigned other_id = i % 2 == 0 ? i + 1 : i - 1;
-      for (unsigned j = 0; j < hist_size; ++j) {
-        dst_sum[other_id * hist_size + j] =
-          hist_sum_parent[parent_idx * hist_size + j] -
-          dst_sum[i * hist_size + j];
-        dst_count[other_id * hist_size + j] =
-          hist_count_parent[parent_idx * hist_size + j] -
-          dst_count[i * hist_size + j];
-      }
-    }
-  }
-}  // namespace core
-
-template __global__ void hist_sum_dynamic<float, float>(
-  float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
-  const unsigned *hist_count_parent, const float *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned hist_size_bits, const bool use_trick, const size_t n);
-
-template __global__ void hist_sum_dynamic<float2, float2>(
-  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
-  const unsigned *hist_count_parent, const float2 *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned hist_size_bits, const bool use_trick, const size_t n);
-
-template __global__ void hist_sum_dynamic<double, float>(
-  double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
-  const unsigned *hist_count_parent, const float *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned hist_size_bits, const bool use_trick, const size_t n);
-
-template __global__ void hist_sum_dynamic<mydouble2, float2>(
-  mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
-  const unsigned *hist_count_parent, const float2 *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned hist_size_bits, const bool use_trick, const size_t n);
 
 template <typename SUM_T, typename GRAD_T>
 __global__ void hist_sum(SUM_T *dst_sum, unsigned *dst_count,

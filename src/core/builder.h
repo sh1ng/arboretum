@@ -369,7 +369,8 @@ class BaseGrower {
   }
 
   template <typename T>
-  void PartitionByIndex(T *dst, T *src, const device_vector<unsigned> &index) {
+  void PartitionByIndex(T *dst, const T *src,
+                        const device_vector<unsigned> &index) {
     scatter_kernel<T><<<gridSizeGather, blockSizeGather, 0, stream>>>(
       thrust::raw_pointer_cast(index.data()), src, dst, index.size());
   }

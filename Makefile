@@ -7,7 +7,7 @@ build:
 build/libarboretum.so: build
 
 wheel: build/libarboretum.so
-	cp build/libarboretum.so python-package/arboretum && \
+	cp build/libarboretum.so python-package/arboretum/libarboretum.so && \
 	rm -rf python-package/dist && \
 	cd python-package && \
 	python3 setup.py sdist bdist_wheel --plat-name=manylinux1_x86_64
