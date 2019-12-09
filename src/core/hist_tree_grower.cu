@@ -136,9 +136,6 @@ HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistTreeGrower(
   hist_bin_count.resize(total_hist_size);
   hist_prefix_count.resize(total_hist_size);
 
-  //   cudaFuncSetCacheConfig(hist_sum_dynamic<SUM_T, GRAD_T>,
-  //                          cudaFuncCachePreferShared);
-
   cudaFuncSetCacheConfig(hist_sum_node<SUM_T, GRAD_T>,
                          cudaFuncCachePreferShared);
 
@@ -305,7 +302,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
   const unsigned *node_size, const unsigned short *fvalue,
   const unsigned hist_size_bits, const unsigned size, cudaStream_t stream) {
   constexpr unsigned blockSize = HIST_SUM_BLOCK_DIM;
-  constexpr unsigned items_per_thread = ITEMS_PER_THREAD_FOR_TYPE<SUM_T>();
+  constexpr unsigned items_per_thread = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T>();
   const unsigned gridSize = (size + (blockSize * items_per_thread) - 1) /
                             (blockSize * items_per_thread);
 

@@ -103,7 +103,7 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
   int warp_id = threadIdx.x / 32;
   int lane = threadIdx.x % 32;
   typedef cub::BlockRadixSort<unsigned short, HIST_SUM_BLOCK_DIM,
-                              ITEMS_PER_THREAD, GRAD_T, 5, false,
+                              ITEMS_PER_THREAD, GRAD_T, 4, false,
                               cub ::BLOCK_SCAN_RAKING>
     BlockRadixSort;
 
@@ -279,7 +279,7 @@ __global__ void hist_sum_multi_node(
   int lane = threadIdx.x % 32;
 
   typedef cub::BlockRadixSort<unsigned short, HIST_SUM_BLOCK_DIM,
-                              ITEMS_PER_THREAD, GRAD_T, 5, false,
+                              ITEMS_PER_THREAD, GRAD_T, 4, false,
                               cub ::BLOCK_SCAN_RAKING>
     BlockRadixSort;
 
