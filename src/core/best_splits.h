@@ -3,6 +3,7 @@
 
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+#include "common.h"
 
 namespace arboretum {
 namespace core {
@@ -19,8 +20,7 @@ struct BestSplit {
   void NextLevel(const unsigned size);
   const unsigned length;
   const unsigned hist_size;
-  device_vector<float> gain;
-  device_vector<int> feature;
+  device_vector<my_atomics> gain_feature;
   device_vector<SUM_T> sum;
   device_vector<unsigned> count;
   device_vector<unsigned> split_value;
@@ -31,8 +31,7 @@ struct BestSplit {
   host_vector<SUM_T> parent_node_sum_h;
   host_vector<unsigned> parent_node_count_h;
 
-  host_vector<float> gain_h;
-  host_vector<int> feature_h;
+  host_vector<my_atomics> gain_feature_h;
   host_vector<SUM_T> sum_h;
   host_vector<unsigned> count_h;
   host_vector<unsigned> split_value_h;

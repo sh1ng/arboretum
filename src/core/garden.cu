@@ -514,15 +514,18 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     for (unsigned i = 0; i < len; ++i) {
       const unsigned quantized = best.split_value_h[i];
 
+      my_atomics gain_feature = best.gain_feature[i];
+
       _bestSplit[i].quantized = quantized;
       _bestSplit[i].count = best.count_h[i];
-      _bestSplit[i].fid = best.feature_h[i];
+      _bestSplit[i].fid = gain_feature.Feature();
       _bestSplit[i].sum_grad = best.sum_h[i];
-      if (best.feature_h[i] != -1) {
+
+      if (gain_feature.Feature() != -1) {
         _bestSplit[i].split_value =
-          quantized >= data->data_reduced_mapping[best.feature_h[i]].size()
+          quantized >= data->data_reduced_mapping[gain_feature.Feature()].size()
             ? std::numeric_limits<float>::infinity()
-            : data->data_reduced_mapping[best.feature_h[i]][quantized];
+            : data->data_reduced_mapping[gain_feature.Feature()][quantized];
       } else {
         _bestSplit[i].gain = 0.0;
         _bestSplit[i].fid = 0;

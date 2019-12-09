@@ -48,13 +48,14 @@ __global__ void gain_kernel(
 
 template <typename NODE_T, typename SUM_T>
 __global__ void filter_apply_candidates(
-  float *gain, int *features, SUM_T *sum, unsigned *split, unsigned *count,
+  my_atomics *gain_feature, SUM_T *sum, unsigned *split, unsigned *count,
   unsigned *node_size_prefix_sum_next, SUM_T *node_sum_prefix_sum_next,
   const my_atomics *candidates, const SUM_T *split_sum,
   const unsigned short *fvalue, const unsigned short *fvalue_sorted,
   NODE_T *row2Node, const unsigned *node_size_prefix_sum,
   const SUM_T *node_sum_prefix_sum, const int feature, const unsigned level,
   const unsigned n) {
+  // TODO: get rid of dynamic parallelism
   for (unsigned i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     const unsigned node_start = node_size_prefix_sum[i];
@@ -65,10 +66,13 @@ __global__ void filter_apply_candidates(
     const SUM_T node_start_sum = node_sum_prefix_sum[i];
     const SUM_T node_end_sum = node_sum_prefix_sum[i + 1];
     if (node_size > 0) {
-      if (gain[i] < gain_) {
+      my_atomics current_gain_feature = gain_feature[i];
+      if (current_gain_feature.Gain() < gain_) {
         const SUM_T split_sum_value = split_sum[idx];
-        gain[i] = gain_;
-        features[i] = feature;
+        my_atomics val;
+        val.floats[0] = gain_;
+        val.ints[1] = feature;
+        gain_feature[i] = val;
         sum[i] = split_sum_value - node_start_sum;
         count[i] = idx - node_start;
         unsigned short threshold = fvalue_sorted[idx];
@@ -88,7 +92,8 @@ __global__ void filter_apply_candidates(
         node_size_prefix_sum_next[2 * i + 2] = node_end;
         node_sum_prefix_sum_next[2 * i + 1] = split_sum_value;
         node_sum_prefix_sum_next[2 * i + 2] = node_end_sum;
-      } else if (gain[i] == 0 && features[i] == -1) {
+      } else if (current_gain_feature.Gain() == 0 &&
+                 current_gain_feature.Feature() == -1) {
         sum[i] = node_end_sum - node_start_sum;
         split[i] = (unsigned)-1;
         count[i] = node_size;
@@ -284,8 +289,7 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
 
   filter_apply_candidates<NODE_T, SUM_T>
     <<<gridSize, blockSize, 0, this->stream>>>(
-      thrust::raw_pointer_cast(best.gain.data()),
-      thrust::raw_pointer_cast(best.feature.data()),
+      thrust::raw_pointer_cast(best.gain_feature.data()),
       thrust::raw_pointer_cast(best.sum.data()),
       thrust::raw_pointer_cast(best.split_value.data()),
       thrust::raw_pointer_cast(best.count.data()),
