@@ -119,14 +119,14 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
 
   union U {
     U(){};
-    typename BlockRadixSort::TempStorage sort;
     typename BlockScanSum::TempStorage scan_sum[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanCount::TempStorage scan_count[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanMax::TempStorage scan_max[HIST_SUM_BLOCK_DIM / 32];
+    total total;
   };
 
-  __shared__ total total;
   __shared__ U temp_storage;
+  __shared__ typename BlockRadixSort::TempStorage temp_sort;
 
   // Obtain a segment of consecutive items that are blocked across threads
   unsigned short thread_keys[ITEMS_PER_THREAD];
@@ -145,24 +145,19 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
   }
 
   // Collectively sort the keys and values among block threads
-  BlockRadixSort(temp_storage.sort)
-    .Sort(thread_keys, thread_values, 0, end_bit);
+  BlockRadixSort(temp_sort).Sort(thread_keys, thread_values, 0, end_bit);
 
-  __syncthreads();
-
-  unsigned short key = thread_keys[0];
   SUM_T sum_current = thread_values[0];
   unsigned short count_current = 1;
 
 #pragma unroll
   for (unsigned i = 1; i < ITEMS_PER_THREAD; ++i) {
-    if (key == thread_keys[i]) {
+    if (thread_keys[i - 1] == thread_keys[i]) {
       sum_current += thread_values[i];
       count_current++;
     } else {
-      atomicAdd(&dst_sum[key], sum_current);
-      atomicAdd(&dst_count[key], count_current);
-      key = thread_keys[i];
+      atomicAdd(&dst_sum[thread_keys[i - 1]], sum_current);
+      atomicAdd(&dst_count[thread_keys[i - 1]], count_current);
       sum_current = thread_values[i];
       count_current = 1;
     }
@@ -180,8 +175,8 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     .ExclusiveScan(count_current, count, 0, cub::Sum());
 
   // key - segment idx(thread idx), value - bin
-  cub::KeyValuePair<unsigned short, unsigned short> segment_start(threadIdx.x,
-                                                                  key);
+  cub::KeyValuePair<unsigned short, unsigned short> segment_start(
+    threadIdx.x, thread_keys[ITEMS_PER_THREAD - 1]);
 
   struct SegmentMaxAndMinIndex {
     __device__ __forceinline__ cub::KeyValuePair<unsigned short, unsigned short>
@@ -200,24 +195,25 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     .ExclusiveScan(segment_start, segment_start, initial,
                    SegmentMaxAndMinIndex());
 
-  total.sum[threadIdx.x] = sum;
-  total.count[threadIdx.x] = count;
+  temp_storage.total.sum[threadIdx.x] = sum;
+  temp_storage.total.count[threadIdx.x] = count;
 
   // flush previous segment
   if (thread_keys[ITEMS_PER_THREAD - 1] != segment_start.value) {
     atomicAdd(&dst_sum[segment_start.value],
-              sum - total.sum[segment_start.key]);
+              sum - temp_storage.total.sum[segment_start.key]);
     atomicAdd(&dst_count[segment_start.value],
-              count - total.count[segment_start.key]);
+              count - temp_storage.total.count[segment_start.key]);
   }
   // last thread also need to handle it's own sum
   if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != HIST_SUM_NO_DATA) {
     // flush all collected data
     if (thread_keys[ITEMS_PER_THREAD - 1] == segment_start.value) {
       atomicAdd(&dst_sum[thread_keys[ITEMS_PER_THREAD - 1]],
-                sum_current + sum - total.sum[segment_start.key]);
-      atomicAdd(&dst_count[thread_keys[ITEMS_PER_THREAD - 1]],
-                count_current + count - total.count[segment_start.key]);
+                sum_current + sum - temp_storage.total.sum[segment_start.key]);
+      atomicAdd(
+        &dst_count[thread_keys[ITEMS_PER_THREAD - 1]],
+        count_current + count - temp_storage.total.count[segment_start.key]);
     } else {  // only thread local sum
       atomicAdd(&dst_sum[thread_keys[ITEMS_PER_THREAD - 1]], sum_current);
       atomicAdd(&dst_count[thread_keys[ITEMS_PER_THREAD - 1]], count_current);
@@ -290,14 +286,14 @@ __global__ void hist_sum_multi_node(
 
   union U {
     U(){};
-    typename BlockRadixSort::TempStorage sort;
     typename BlockScanSum::TempStorage scan_sum[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanCount::TempStorage scan_count[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanMax::TempStorage scan_max[HIST_SUM_BLOCK_DIM / 32];
+    total total;
   };
 
   __shared__ U temp_storage;
-  __shared__ total total;
+  __shared__ typename BlockRadixSort::TempStorage temp_sort;
 
   // Obtain a segment of consecutive items that are blocked across threads
   unsigned short thread_keys[ITEMS_PER_THREAD];
@@ -320,24 +316,20 @@ __global__ void hist_sum_multi_node(
     }
 
     // Collectively sort the keys and values among block threads
-    BlockRadixSort(temp_storage.sort)
-      .Sort(thread_keys, thread_values, 0, end_bit);
-
-    __syncthreads();
-
-    unsigned short key = thread_keys[0];
+    BlockRadixSort(temp_sort).Sort(thread_keys, thread_values, 0, end_bit);
     SUM_T sum_current = thread_values[0];
     unsigned short count_current = 1;
 
 #pragma unroll
     for (unsigned i = 1; i < ITEMS_PER_THREAD; ++i) {
-      if (key == thread_keys[i]) {
+      if (thread_keys[i - 1] == thread_keys[i]) {
         sum_current += thread_values[i];
         count_current++;
       } else {
-        atomicAdd(&dst_sum[key + node_id * hist_size], sum_current);
-        atomicAdd(&dst_count[key + node_id * hist_size], count_current);
-        key = thread_keys[i];
+        atomicAdd(&dst_sum[thread_keys[i - 1] + node_id * hist_size],
+                  sum_current);
+        atomicAdd(&dst_count[thread_keys[i - 1] + node_id * hist_size],
+                  count_current);
         sum_current = thread_values[i];
         count_current = 1;
       }
@@ -355,8 +347,8 @@ __global__ void hist_sum_multi_node(
       .ExclusiveScan(count_current, count, 0, cub::Sum());
 
     // key - segment idx, value - segment value
-    cub::KeyValuePair<unsigned short, unsigned short> segment_start(threadIdx.x,
-                                                                    key);
+    cub::KeyValuePair<unsigned short, unsigned short> segment_start(
+      threadIdx.x, thread_keys[ITEMS_PER_THREAD - 1]);
 
     struct SegmentMaxAndMinIndex {
       __device__ __forceinline__
@@ -376,15 +368,15 @@ __global__ void hist_sum_multi_node(
       .ExclusiveScan(segment_start, segment_start, initial,
                      SegmentMaxAndMinIndex());
 
-    total.sum[threadIdx.x] = sum;
-    total.count[threadIdx.x] = count;
+    temp_storage.total.sum[threadIdx.x] = sum;
+    temp_storage.total.count[threadIdx.x] = count;
 
     // flush previous segment
     if (thread_keys[ITEMS_PER_THREAD - 1] != segment_start.value) {
       atomicAdd(&dst_sum[segment_start.value + node_id * hist_size],
-                sum - total.sum[segment_start.key]);
+                sum - temp_storage.total.sum[segment_start.key]);
       atomicAdd(&dst_count[segment_start.value + node_id * hist_size],
-                count - total.count[segment_start.key]);
+                count - temp_storage.total.count[segment_start.key]);
     }
     // last thread also need to handle it's own sum
     if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != HIST_SUM_NO_DATA) {
@@ -392,10 +384,10 @@ __global__ void hist_sum_multi_node(
       if (thread_keys[ITEMS_PER_THREAD - 1] == segment_start.value) {
         atomicAdd(
           &dst_sum[thread_keys[ITEMS_PER_THREAD - 1] + node_id * hist_size],
-          sum_current + sum - total.sum[segment_start.key]);
+          sum_current + sum - temp_storage.total.sum[segment_start.key]);
         atomicAdd(
           &dst_count[thread_keys[ITEMS_PER_THREAD - 1] + node_id * hist_size],
-          count_current + count - total.count[segment_start.key]);
+          count_current + count - temp_storage.total.count[segment_start.key]);
       } else {  // only thread local sum
         atomicAdd(
           &dst_sum[thread_keys[ITEMS_PER_THREAD - 1] + node_id * hist_size],
@@ -405,7 +397,6 @@ __global__ void hist_sum_multi_node(
           count_current);
       }
     }
-    __syncthreads();
   }
 }
 
