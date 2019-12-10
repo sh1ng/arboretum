@@ -239,7 +239,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesNoTrick) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricNoTrick) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * 10;
+  const size_t size = 128 * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
@@ -292,7 +292,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricNoTrick) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * 10;
+  const size_t size = 128 * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);
@@ -353,7 +353,7 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick) {
 
 TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick2) {
   const unsigned hist_size = 4;
-  const size_t size = HIST_SUM_BLOCK_DIM * 10;
+  const size_t size = 128 * 10;
 
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(hist_size * 2, 0.0);

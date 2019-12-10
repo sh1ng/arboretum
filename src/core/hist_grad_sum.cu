@@ -123,9 +123,9 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     typename BlockScanSum::TempStorage scan_sum[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanCount::TempStorage scan_count[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanMax::TempStorage scan_max[HIST_SUM_BLOCK_DIM / 32];
-    total total;
   };
 
+  __shared__ total total;
   __shared__ U temp_storage;
 
   // Obtain a segment of consecutive items that are blocked across threads
@@ -159,7 +159,6 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     if (key == thread_keys[i]) {
       sum_current += thread_values[i];
       count_current++;
-
     } else {
       atomicAdd(&dst_sum[key], sum_current);
       atomicAdd(&dst_count[key], count_current);
@@ -189,40 +188,36 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     operator()(
       const cub::KeyValuePair<unsigned short, unsigned short> &a,
       const cub::KeyValuePair<unsigned short, unsigned short> &b) const {
-      if ((b.value > a.value) || ((a.value == b.value) && (b.key < a.key)))
+      if ((b.value > a.value) || ((a.value == b.value) && (b.key <= a.key)))
         return b;
       return a;
     }
   };
 
-  cub::KeyValuePair<unsigned short, unsigned short> initial(0, 0);
+  cub::KeyValuePair<unsigned short, unsigned short> initial(threadIdx.x, 0);
 
   BlockScanMax(temp_storage.scan_max[warp_id])
     .ExclusiveScan(segment_start, segment_start, initial,
                    SegmentMaxAndMinIndex());
 
-  temp_storage.total.sum[threadIdx.x] = sum;
-  temp_storage.total.count[threadIdx.x] = count;
-
-  __syncthreads();
+  total.sum[threadIdx.x] = sum;
+  total.count[threadIdx.x] = count;
 
   // flush previous segment
   if (thread_keys[ITEMS_PER_THREAD - 1] != segment_start.value) {
     atomicAdd(&dst_sum[segment_start.value],
-              sum - temp_storage.total.sum[segment_start.key]);
+              sum - total.sum[segment_start.key]);
     atomicAdd(&dst_count[segment_start.value],
-              count - temp_storage.total.count[segment_start.key]);
+              count - total.count[segment_start.key]);
   }
   // last thread also need to handle it's own sum
   if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != HIST_SUM_NO_DATA) {
     // flush all collected data
     if (thread_keys[ITEMS_PER_THREAD - 1] == segment_start.value) {
       atomicAdd(&dst_sum[thread_keys[ITEMS_PER_THREAD - 1]],
-                sum_current + sum - temp_storage.total.sum[segment_start.key]);
-      atomicAdd(
-        &dst_count[thread_keys[ITEMS_PER_THREAD - 1]],
-        count_current + count - temp_storage.total.count[segment_start.key]);
-
+                sum_current + sum - total.sum[segment_start.key]);
+      atomicAdd(&dst_count[thread_keys[ITEMS_PER_THREAD - 1]],
+                count_current + count - total.count[segment_start.key]);
     } else {  // only thread local sum
       atomicAdd(&dst_sum[thread_keys[ITEMS_PER_THREAD - 1]], sum_current);
       atomicAdd(&dst_count[thread_keys[ITEMS_PER_THREAD - 1]], count_current);
@@ -299,10 +294,10 @@ __global__ void hist_sum_multi_node(
     typename BlockScanSum::TempStorage scan_sum[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanCount::TempStorage scan_count[HIST_SUM_BLOCK_DIM / 32];
     typename BlockScanMax::TempStorage scan_max[HIST_SUM_BLOCK_DIM / 32];
-    total total;
   };
 
   __shared__ U temp_storage;
+  __shared__ total total;
 
   // Obtain a segment of consecutive items that are blocked across threads
   unsigned short thread_keys[ITEMS_PER_THREAD];
@@ -316,7 +311,6 @@ __global__ void hist_sum_multi_node(
     for (unsigned i = 0; i < ITEMS_PER_THREAD; ++i) {
       unsigned idx = block_offset * ITEMS_PER_THREAD * HIST_SUM_BLOCK_DIM +
                      i * HIST_SUM_BLOCK_DIM + threadIdx.x;
-
       if (idx < node_size) {
         thread_keys[i] = bin[idx + node_start];
         thread_values[i] = values[idx + node_start];
@@ -370,29 +364,27 @@ __global__ void hist_sum_multi_node(
         operator()(
           const cub::KeyValuePair<unsigned short, unsigned short> &a,
           const cub::KeyValuePair<unsigned short, unsigned short> &b) const {
-        if ((b.value > a.value) || ((a.value == b.value) && (b.key < a.key)))
+        if ((b.value > a.value) || ((a.value == b.value) && (b.key <= a.key)))
           return b;
         return a;
       }
     };
 
-    cub::KeyValuePair<unsigned short, unsigned short> initial(0, 0);
+    cub::KeyValuePair<unsigned short, unsigned short> initial(threadIdx.x, 0);
 
     BlockScanMax(temp_storage.scan_max[warp_id])
       .ExclusiveScan(segment_start, segment_start, initial,
                      SegmentMaxAndMinIndex());
 
-    temp_storage.total.sum[threadIdx.x] = sum;
-    temp_storage.total.count[threadIdx.x] = count;
-
-    __syncthreads();
+    total.sum[threadIdx.x] = sum;
+    total.count[threadIdx.x] = count;
 
     // flush previous segment
     if (thread_keys[ITEMS_PER_THREAD - 1] != segment_start.value) {
       atomicAdd(&dst_sum[segment_start.value + node_id * hist_size],
-                sum - temp_storage.total.sum[segment_start.key]);
+                sum - total.sum[segment_start.key]);
       atomicAdd(&dst_count[segment_start.value + node_id * hist_size],
-                count - temp_storage.total.count[segment_start.key]);
+                count - total.count[segment_start.key]);
     }
     // last thread also need to handle it's own sum
     if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != HIST_SUM_NO_DATA) {
@@ -400,11 +392,10 @@ __global__ void hist_sum_multi_node(
       if (thread_keys[ITEMS_PER_THREAD - 1] == segment_start.value) {
         atomicAdd(
           &dst_sum[thread_keys[ITEMS_PER_THREAD - 1] + node_id * hist_size],
-          sum_current + sum - temp_storage.total.sum[segment_start.key]);
+          sum_current + sum - total.sum[segment_start.key]);
         atomicAdd(
           &dst_count[thread_keys[ITEMS_PER_THREAD - 1] + node_id * hist_size],
-          count_current + count - temp_storage.total.count[segment_start.key]);
-
+          count_current + count - total.count[segment_start.key]);
       } else {  // only thread local sum
         atomicAdd(
           &dst_sum[thread_keys[ITEMS_PER_THREAD - 1] + node_id * hist_size],
