@@ -311,7 +311,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
   const unsigned *node_size, const unsigned short *fvalue,
   const unsigned hist_size_bits, const unsigned size, cudaStream_t stream) {
   constexpr unsigned blockSize = HIST_SUM_BLOCK_DIM;
-  constexpr unsigned items_per_thread = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 80>();
+  constexpr unsigned items_per_thread = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 96>();
   const unsigned gridSize = (size + (blockSize * items_per_thread) - 1) /
                             (blockSize * items_per_thread);
 
