@@ -12,7 +12,7 @@ constexpr int ITEMS_PER_THREAD_FOR_TYPE() {
 }
 
 template <typename SUM_T, typename GRAD_T,
-          int ITEMS_PER_THREAD = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 80>()>
+          int ITEMS_PER_THREAD = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 88>()>
 __global__ void hist_sum_multi_node(
   SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
