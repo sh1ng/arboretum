@@ -514,7 +514,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
     for (unsigned i = 0; i < len; ++i) {
       const unsigned quantized = best.split_value_h[i];
 
-      my_atomics gain_feature = best.gain_feature[i];
+      const my_atomics gain_feature = best.gain_feature_h[i];
 
       _bestSplit[i].quantized = quantized;
       _bestSplit[i].count = best.count_h[i];
