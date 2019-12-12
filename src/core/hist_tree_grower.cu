@@ -143,7 +143,10 @@ HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistTreeGrower(
   cudaFuncSetCacheConfig(hist_sum_node<SUM_T, GRAD_T>,
                          cudaFuncCachePreferShared);
 
-  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T>,
+  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T, true>,
+                         cudaFuncCachePreferShared);
+
+  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T, false>,
                          cudaFuncCachePreferShared);
 
   size_t temp_storage_bytes = 0;
@@ -228,9 +231,10 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
   const unsigned gridSize = size * (1 << blocks_per_node);
 
   if (use_trick) {
-    hist_sum_multi_node<SUM_T, GRAD_T><<<gridSize / 2, blockSize, 0, stream>>>(
-      sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
-      fvalue, hist_size, hist_size_bits, blocks_per_node, use_trick);
+    hist_sum_multi_node<SUM_T, GRAD_T, true>
+      <<<gridSize / 2, blockSize, 0, stream>>>(
+        sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
+        fvalue, hist_size, hist_size_bits, blocks_per_node);
 
     const unsigned block_size = 1024;
     const unsigned grid_size =
@@ -241,9 +245,10 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
       node_size, hist_size, hist_size * size / 2);
 
   } else {
-    hist_sum_multi_node<SUM_T, GRAD_T><<<gridSize, blockSize, 0, stream>>>(
-      sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
-      fvalue, hist_size, hist_size_bits, blocks_per_node, use_trick);
+    hist_sum_multi_node<SUM_T, GRAD_T, false>
+      <<<gridSize, blockSize, 0, stream>>>(
+        sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
+        fvalue, hist_size, hist_size_bits, blocks_per_node);
   }
 }
 
