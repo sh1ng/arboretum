@@ -67,7 +67,9 @@ __global__ void filter_apply_candidates(
     const SUM_T node_end_sum = node_sum_prefix_sum[i + 1];
     if (node_size > 0) {
       my_atomics current_gain_feature = gain_feature[i];
-      if (current_gain_feature.Gain() < gain_) {
+      if (current_gain_feature.Gain() < gain_ ||
+          (current_gain_feature.Gain() == gain_ &&
+           feature < current_gain_feature.Feature())) {
         const SUM_T split_sum_value = split_sum[idx];
         my_atomics val;
         val.floats[0] = gain_;

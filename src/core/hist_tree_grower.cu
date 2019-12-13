@@ -51,13 +51,6 @@ __global__ void hist_apply_candidates(
 
   if (node_size < reminder * blockDim.x) return;
 
-  //   __shared__ my_atomics current_gain_feature;
-  //   __shared__ float gain_;
-  //   __shared__ unsigned idx;
-  //   __shared__ unsigned split_count_value;
-  //   __shared__ SUM_T node_start_sum;
-  //   __shared__ SUM_T node_end_sum;
-
   const float gain_ = candidates[i].floats[0];
   const unsigned idx = candidates[i].ints[1];
   const unsigned split_count_value = split_count[idx];
@@ -65,11 +58,11 @@ __global__ void hist_apply_candidates(
   const SUM_T node_end_sum = node_sum_prefix_sum[i + 1];
   const my_atomics current_gain_feature = gain_feature[i];
 
-  //   __syncthreads();
-
   if (node_size > 0) {
     if (current_gain_feature.Gain() < gain_ ||
-        current_gain_feature.Feature() == feature) {
+        current_gain_feature.Feature() == feature ||
+        (current_gain_feature.Gain() == gain_ &&
+         feature < current_gain_feature.Feature())) {
       unsigned threshold = idx % hist_size;
       if (threadIdx.x == 0 && reminder == 0) {
         my_atomics val;
