@@ -42,75 +42,62 @@ __global__ void hist_apply_candidates(
   const unsigned *split_count, const unsigned short *fvalue, NODE_T *row2Node,
   const unsigned *node_size_prefix_sum, const SUM_T *node_sum_prefix_sum,
   const int feature, const unsigned level, const unsigned hist_size,
-  const unsigned exponent) {
-  const unsigned i = blockIdx.x >> exponent;
-  const unsigned reminder = (blockIdx.x) & ((1 << exponent) - 1);
-  const unsigned node_start = node_size_prefix_sum[i];
-  const unsigned node_end = node_size_prefix_sum[i + 1];
-  const unsigned node_size = node_end - node_start;
+  const unsigned n) {
+  for (unsigned i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
+       i += gridDim.x * blockDim.x) {
+    const unsigned node_start = node_size_prefix_sum[i];
+    const unsigned node_end = node_size_prefix_sum[i + 1];
+    const unsigned node_size = node_end - node_start;
+    const float gain_ = candidates[i].floats[0];
+    const unsigned idx = candidates[i].ints[1];
+    const unsigned split_count_value = split_count[idx];
+    const SUM_T node_start_sum = node_sum_prefix_sum[i];
+    const SUM_T node_end_sum = node_sum_prefix_sum[i + 1];
 
-  if (node_size < reminder * blockDim.x) return;
-
-  const float gain_ = candidates[i].floats[0];
-  const unsigned idx = candidates[i].ints[1];
-  const unsigned split_count_value = split_count[idx];
-  const SUM_T node_start_sum = node_sum_prefix_sum[i];
-  const SUM_T node_end_sum = node_sum_prefix_sum[i + 1];
-  const my_atomics current_gain_feature = gain_feature[i];
-
-  if (node_size > 0) {
-    if (current_gain_feature.Gain() < gain_ ||
-        current_gain_feature.Feature() == feature ||
-        (current_gain_feature.Gain() == gain_ &&
-         feature < current_gain_feature.Feature())) {
-      unsigned threshold = idx % hist_size;
-      if (threadIdx.x == 0 && reminder == 0) {
+    if (node_size > 0) {
+      const my_atomics current = gain_feature[i];
+      if (current.Gain() < gain_ ||
+          (current.Gain() == gain_ && feature < current.Feature())) {
         my_atomics val;
         val.floats[0] = gain_;
         val.ints[1] = feature;
         gain_feature[i] = val;
         sum[i] = split_sum[idx] - node_start_sum;
         count[i] = split_count_value - node_start;
+        unsigned threshold = idx % hist_size;
         split[i] = threshold;
-      }
 
-      for (unsigned j = threadIdx.x + reminder * blockDim.x; j < node_size;
-           j += blockDim.x * (1 << exponent)) {
-        const unsigned right =
-          unsigned(fvalue[j + node_start] >= (threshold + 1));
-
-        unsigned int current = row2Node[j + node_start];
-        // const unsigned tmp = current;
-        // clear
-        current &= ~(1ULL << (level));
-        // set
-        current |= right << level;
-        row2Node[j + node_start] = current;
-      }
-
-      if (threadIdx.x == 0 && reminder == 0) {
+        unsigned block_size = MAX_THREADS > node_size ? node_size : MAX_THREADS;
+        unsigned grid_size =
+          unsigned((node_size + block_size - 1) / block_size);
+        cudaStream_t s;
+        DEVICE_OK(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking));
+        apply_split<NODE_T><<<grid_size, block_size, 0, s>>>(
+          row2Node + node_start, fvalue + node_start, threshold + 1, level,
+          node_size);
+        DEVICE_OK(cudaDeviceSynchronize());
+        DEVICE_OK(cudaStreamDestroy(s));
         node_size_prefix_sum_next[2 * i + 1] = split_count_value;
         node_size_prefix_sum_next[2 * i + 2] = node_end;
         node_sum_prefix_sum_next[2 * i + 1] = split_sum[idx];
         node_sum_prefix_sum_next[2 * i + 2] = node_end_sum;
+      } else if (current.Gain() == 0 &&
+                 current.Feature() == -1) {  // no split, all to left
+        sum[i] = node_end_sum - node_start_sum;
+        split[i] = (unsigned)-1;
+        count[i] = node_size;
+        node_size_prefix_sum_next[2 * i + 1] =
+          node_size_prefix_sum_next[2 * i + 2] = node_end;
+        node_sum_prefix_sum_next[2 * i + 1] =
+          node_sum_prefix_sum_next[2 * i + 2] = node_end_sum;
       }
-    } else if (current_gain_feature.Gain() == 0 &&
-               current_gain_feature.Feature() == -1 && threadIdx.x == 0 &&
-               reminder == 0) {  // no split, all to left
-      sum[i] = node_end_sum - node_start_sum;
-      split[i] = (unsigned)-1;
-      count[i] = node_size;
-      node_size_prefix_sum_next[2 * i + 1] = node_end;
-      node_size_prefix_sum_next[2 * i + 2] = node_end;
-      node_sum_prefix_sum_next[2 * i + 1] = node_end_sum;
-      node_sum_prefix_sum_next[2 * i + 2] = node_end_sum;
+      // ignore not-optimal splits
+    } else {
+      node_size_prefix_sum_next[2 * i + 1] =
+        node_size_prefix_sum_next[2 * i + 2] = node_end;
+      node_sum_prefix_sum_next[2 * i + 1] =
+        node_sum_prefix_sum_next[2 * i + 2] = node_end_sum;
     }
-    // ignore not-optimal splits
-  } else if (threadIdx.x == 0 && reminder == 0) {
-    node_size_prefix_sum_next[2 * i + 1] = node_end;
-    node_size_prefix_sum_next[2 * i + 2] = node_end;
-    node_sum_prefix_sum_next[2 * i + 1] = node_end_sum;
-    node_sum_prefix_sum_next[2 * i + 2] = node_end_sum;
   }
 }  // namespace core
 
@@ -434,14 +421,14 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
   const device_vector<SUM_T> &parent_node_sum,
   const device_vector<unsigned int> &parent_node_count, unsigned fid,
   const unsigned level, const unsigned depth, const unsigned size) {
-  constexpr int min_grid_size_exponent = 9;
-  constexpr int min_grid_size_per_node_exponent = 4;
+  int gridSize = 0;
+  int blockSize = 0;
 
-  int exponent =
-    max(min_grid_size_exponent, level + min_grid_size_per_node_exponent);
+  compute1DInvokeConfig(size, &gridSize, &blockSize,
+                        hist_apply_candidates<NODE_T, SUM_T>);
 
   hist_apply_candidates<NODE_T, SUM_T>
-    <<<(1 << exponent), 192, 0, this->stream>>>(
+    <<<gridSize, blockSize, 0, this->stream>>>(
       thrust::raw_pointer_cast(best.gain_feature.data()),
       thrust::raw_pointer_cast(best.sum.data()),
       thrust::raw_pointer_cast(best.split_value.data()),
@@ -454,7 +441,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
       this->d_fvalue_partitioned, thrust::raw_pointer_cast(row2Node.data()),
       thrust::raw_pointer_cast(parent_node_count.data()),
       thrust::raw_pointer_cast(parent_node_sum.data()), fid, depth - level - 2,
-      this->hist_size, exponent - level);
+      this->hist_size, size);
   if (this->config->use_hist_subtraction_trick) {
     this->features_histogram->Update(this->sum, this->hist_bin_count, fid,
                                      level, this->stream);
