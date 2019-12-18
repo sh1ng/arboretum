@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 sys.path.insert(0, '.')
 
 setup(name='arboretum',
-      version='0.1a2',
+      version='0.1a4',
       description='Gradient Boosting powered by GPU(NVIDIA CUDA)',
       long_description='Gradient Boosting implementation with focus on overcoming GRAM size limit',
       install_requires=[

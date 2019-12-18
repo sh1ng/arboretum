@@ -562,7 +562,8 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   }
 };
 
-Garden::Garden(const Configuration &cfg) : cfg(cfg), _init(false) {
+Garden::Garden(const Configuration &cfg)
+    : cfg(cfg), _init(false), _builder(nullptr), _objective(nullptr) {
   switch (cfg.objective) {
     case LinearRegression:
       _objective = new RegressionObjective(cfg.tree_param.initial_y);
@@ -1009,13 +1010,15 @@ void Garden::GetY(arboretum::io::DataMatrix *data,
 }
 
 void Garden::Predict(const arboretum::io::DataMatrix *data,
-                     std::vector<float> &out) const {
+                     std::vector<float> &out, const int n_rounds) const {
   out.resize(data->rows * cfg.tree_param.labels_count);
   thrust::host_vector<float> tmp(data->rows * cfg.tree_param.labels_count);
 
   thrust::fill(tmp.begin(), tmp.end(),
                _objective->IntoInternal(cfg.tree_param.initial_y));
-  for (size_t i = 0; i < _trees.size(); ++i) {
+
+  auto size = min(n_rounds, int(_trees.size()));
+  for (auto i = 0; i < size; ++i) {
     _trees[i]->Predict(data, tmp);
   }
 

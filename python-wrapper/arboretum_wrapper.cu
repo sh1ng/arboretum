@@ -109,13 +109,13 @@ extern "C" const char *AGrowTree(VoidPointer garden, VoidPointer data,
 }
 
 extern "C" const char *APredict(VoidPointer garden, VoidPointer data,
-                                const float **out) {
+                                const float **out, const int n_rounds) {
   try {
     io::DataMatrix *data_p = static_cast<DataMatrix *>(data);
     Garden *garden_p = static_cast<Garden *>(garden);
 
     std::vector<float> result;
-    garden_p->Predict(data_p, result);
+    garden_p->Predict(data_p, result, n_rounds == -1 ? INT_MAX : n_rounds);
 
     float *p;
     p = new (nothrow) float[result.size()];

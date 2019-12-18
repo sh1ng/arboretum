@@ -25,17 +25,27 @@ inline void to_json(json &j, const Node &node) {
 
 inline void from_json(const json &j, Node &node) {
   j.at("id").get_to(node.id);
-  if (j.find("threshold") != j.end()) j.at("threshold").get_to(node.threshold);
+  if (j.find("threshold") != j.end()) {
+    if (j.at("threshold").is_null())
+      node.threshold = INFINITY;
+    else
+      j.at("threshold").get_to(node.threshold);
+  }
   if (j.find("fid") != j.end()) j.at("fid").get_to(node.fid);
 }
 
 inline void to_json(json &j, const DecisionTree &tree) {
-  j = json{{"nodes", tree.nodes}, {"weights", tree.weights}};
+  j = json{
+    {"nodes", tree.nodes}, {"weights", tree.weights}, {"depth", tree.depth}};
 }
 
 inline void from_json(const json &j, DecisionTree &tree) {
   j.at("nodes").get_to(tree.nodes);
   j.at("weights").get_to(tree.weights);
+  j.at("depth").get_to(tree.depth);
+  for (unsigned i = 0; i < tree.nodes.size(); ++i) {
+    tree.nodes[i].depth = tree.depth;
+  }
 }
 
 inline void to_json(json &j, const Verbose &cfg) {

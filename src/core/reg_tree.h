@@ -38,6 +38,8 @@ struct Node {
 };
 
 struct DecisionTree {
+  DecisionTree(int depth = -1) : depth(depth) {}
+  int depth;
   std::vector<Node> nodes;
   std::vector<float> weights;
 };

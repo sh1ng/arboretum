@@ -115,16 +115,12 @@ struct RegTree : public DecisionTree {
     return tmp;
   }
 
-  const unsigned int depth;
   const unsigned int offset;
   const unsigned short label;
   std::vector<int> _node_lookup[2];
 
   RegTree(unsigned int depth, unsigned short label)
-      : DecisionTree(),
-        depth(depth),
-        offset((1 << (depth - 1)) - 1),
-        label(label) {
+      : DecisionTree(depth), offset((1 << (depth - 1)) - 1), label(label) {
     unsigned int nodes_num = (1 << depth) - 1;
     nodes.reserve(nodes_num);
     _node_lookup[0] = RegTree::InitRight(depth);
@@ -216,8 +212,8 @@ class Garden {
 
   const Configuration cfg;
   void GrowTree(io::DataMatrix *data, float *grad);
-  void Predict(const arboretum::io::DataMatrix *data,
-               std::vector<float> &out) const;
+  void Predict(const arboretum::io::DataMatrix *data, std::vector<float> &out,
+               const int n_rounds = INT_MAX) const;
   void UpdateByLastTree(arboretum::io::DataMatrix *data);
   void GetY(arboretum::io::DataMatrix *data, std::vector<float> &out) const;
   const char *GetModel() const;

@@ -192,12 +192,12 @@ class Garden(object):
 
         return res
 
-    def predict(self, data):
+    def predict(self, data, n_rounds=-1):
         length = int(data.rows)
         preds = ctypes.POINTER(ctypes.c_float)()
         _call_and_throw_if_error(_LIB.APredict(self.handle,
                                                data.handle,
-                                               ctypes.byref(preds)))
+                                               ctypes.byref(preds), n_rounds))
 
         if not isinstance(preds, ctypes.POINTER(ctypes.c_float)):
             raise RuntimeError('expected float pointer')

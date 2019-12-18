@@ -26,7 +26,7 @@ extern "C" const char *AGetY(VoidPointer garden, VoidPointer data,
                              const float **out);
 
 extern "C" const char *APredict(VoidPointer garden, VoidPointer data,
-                                const float **out);
+                                const float **out, const int n_rounds);
 
 extern "C" const char *ADumpModel(const char **model, VoidPointer garden);
 
