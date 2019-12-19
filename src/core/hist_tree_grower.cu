@@ -377,7 +377,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
         this->features_histogram->count_hist[fid].data()),
       thrust::raw_pointer_cast(grad_d.data()),
       thrust::raw_pointer_cast(parent_node_count.data()),
-      this->d_fvalue_partitioned, hist_size_bits, hist_size, length,
+      this->d_fvalue_partitioned, unsigned(fvalue_size), hist_size, length,
       this->features_histogram->CanUseTrick(fid, level), this->stream);
   } else {
     HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
@@ -385,7 +385,8 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
       thrust::raw_pointer_cast(this->hist_bin_count.data()),
       thrust::raw_pointer_cast(grad_d.data()),
       thrust::raw_pointer_cast(parent_node_count.data()),
-      this->d_fvalue_partitioned, hist_size_bits, this->size, this->stream);
+      this->d_fvalue_partitioned, unsigned(fvalue_size), this->size,
+      this->stream);
   }
   cub::Sum sum_op;
 

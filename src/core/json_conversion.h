@@ -88,7 +88,7 @@ inline void from_json(const json &j, InternalConfiguration &cfg) {
 }
 
 inline void to_json(json &j, const TreeParam &cfg) {
-  j = json{{"max_depth", cfg.depth},
+  j = json{{"max_depth", cfg.depth - 1},
            {"min_child_weight", cfg.min_child_weight},
            {"min_leaf_size", cfg.min_leaf_size},
            {"colsample_bytree", cfg.colsample_bytree},
@@ -105,8 +105,11 @@ inline void to_json(json &j, const TreeParam &cfg) {
 }
 
 inline void from_json(const json &j, TreeParam &cfg) {
-  if (j.find("max_depth") != j.end()) j.at("max_depth").get_to(cfg.depth);
-
+  if (j.find("max_depth") != j.end()) {
+    int depth;
+    j.at("max_depth").get_to(depth);
+    cfg.depth = depth + 1;
+  }
   if (j.find("min_child_weight") != j.end())
     j.at("min_child_weight").get_to(cfg.min_child_weight);
 

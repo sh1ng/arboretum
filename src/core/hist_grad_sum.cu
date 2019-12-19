@@ -100,8 +100,6 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
                               const unsigned short *__restrict__ bin,
                               const unsigned end_bit, const unsigned segment,
                               const size_t n) {
-  int warp_id = threadIdx.x / 32;
-  int lane = threadIdx.x % 32;
   typedef cub::BlockRadixSort<unsigned short, HIST_SUM_BLOCK_DIM,
                               ITEMS_PER_THREAD, GRAD_T, 4, false,
                               cub ::BLOCK_SCAN_RAKING>
@@ -170,6 +168,9 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     }
   };
 
+  const int warp_id = threadIdx.x / 32;
+  const int lane = threadIdx.x % 32;
+
   cub::KeyValuePair<unsigned short, SUM_T> initial_sum(count_current,
                                                        sum_current);
   cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
@@ -229,8 +230,6 @@ __global__ void hist_sum_multi_node(
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node) {
-  const int warp_id = threadIdx.x / 32;
-  const int lane = threadIdx.x % 32;
   const int blocks_per_node_size = (1 << blocks_per_node);
 
   int node_id = blockIdx.x >> blocks_per_node;
@@ -326,6 +325,9 @@ __global__ void hist_sum_multi_node(
         return v;
       }
     };
+
+    const int warp_id = threadIdx.x / 32;
+    const int lane = threadIdx.x % 32;
 
     cub::KeyValuePair<unsigned short, SUM_T> initial_sum(count_current,
                                                          sum_current);

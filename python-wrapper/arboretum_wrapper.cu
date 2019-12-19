@@ -22,7 +22,9 @@ extern "C" const char *ACreateFromDenseMatrix(const float *data,
     const size_t size = ncol * nrow;
 #pragma omp parallel for
     for (size_t i = 0; i < size; ++i) {
-      mat->data[i % ncol][i / ncol] = data[i];
+      size_t fidx = i % ncol;
+      size_t offset = i / ncol;
+      mat->data[fidx][offset] = data[i];
     }
 
     const size_t size_cat = ccol * nrow;

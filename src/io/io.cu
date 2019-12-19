@@ -180,7 +180,7 @@ void DataMatrix::InitExact(bool verbose) {
 
 void DataMatrix::UpdateGrad() {}
 void DataMatrix::TransferToGPU(size_t free, bool verbose) {
-  size_t data_size = sizeof(float) * rows;
+  size_t data_size = sizeof(unsigned short) * rows;
   size_t copy_count = std::min(free / data_size, columns_dense);
   for (size_t i = 0; i < copy_count; ++i) {
     sorted_data_device[i].resize(rows);
