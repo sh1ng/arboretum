@@ -965,8 +965,6 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
 
     if (cfg.verbose.gpu) {
       printf("Total bytes %ld avaliable %ld \n", total, free);
-      //   printf("Memory usage estimation %ld per record %ld in total \n",
-      //          mem_per_rec, mem_per_rec * data->rows);
     }
 
     if (cfg.internal.upload_features)
