@@ -38,10 +38,10 @@ class DataMatrix {
   unsigned char max_reduced_size;
   unsigned char max_category_size;
   unsigned char max_feature_size;
-  size_t rows;
-  size_t columns;
-  size_t columns_dense;
-  size_t columns_category;
+  const size_t rows;
+  const size_t columns;
+  const size_t columns_dense;
+  const size_t columns_category;
   void InitExact(bool verbose);
   void InitHist(int hist_size, bool verbose);
   void UpdateGrad();

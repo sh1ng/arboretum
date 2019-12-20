@@ -19,7 +19,7 @@ extern "C" const char *ACreateFromDenseMatrix(const float *data,
                                               float missing, VoidPointer *out) {
   try {
     DataMatrix *mat = new DataMatrix(nrow, ncol, ccol);
-    const size_t size = ncol * nrow;
+    const size_t size = size_t(ncol) * size_t(nrow);
 #pragma omp parallel for
     for (size_t i = 0; i < size; ++i) {
       size_t fidx = i % ncol;
@@ -27,7 +27,7 @@ extern "C" const char *ACreateFromDenseMatrix(const float *data,
       mat->data[fidx][offset] = data[i];
     }
 
-    const size_t size_cat = ccol * nrow;
+    const size_t size_cat = size_t(ccol) * size_t(nrow);
     for (size_t i = 0; i < size_cat; ++i) {
       mat->data_categories[i % ccol][i / ccol] = categories[i];
     }
