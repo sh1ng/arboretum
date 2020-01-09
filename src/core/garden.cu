@@ -11,12 +11,14 @@
 #include "continuous_tree_grower.h"
 #include "cub/cub.cuh"
 #include "cuda_helpers.h"
+#include "gain.cuh"
 #include "garden.h"
 #include "hist_tree_grower.h"
 #include "histogram.h"
 #include "model_helper.h"
 #include "objective.h"
 #include "param.h"
+#include "split.cuh"
 
 namespace arboretum {
 namespace core {
@@ -85,7 +87,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
         param(param),
         gain_param(param.min_leaf_size, param.min_child_weight,
                    param.gamma_absolute, param.gamma_relative, param.lambda,
-                   param.alpha),
+                   param.alpha, param.max_leaf_weight),
         objective(static_cast<ApproximatedObjective<GRAD_T> *>(objective)),
         best(1 << param.depth, config.hist_size),
         features_histograms(1 << param.depth, config.hist_size,
@@ -1003,8 +1005,8 @@ void Garden::UpdateByLastTree(io::DataMatrix *data) {
 
 void Garden::GetY(arboretum::io::DataMatrix *data,
                   std::vector<float> &out) const {
-  //   out.resize(y_internal.size());
-  //   _objective->FromInternal(y_internal, out);
+  out.resize(data->y_hat.size());
+  _objective->FromInternal(data->y_hat, out);
 }
 
 void Garden::Predict(const arboretum::io::DataMatrix *data,

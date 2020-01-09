@@ -11,6 +11,7 @@
 #include "cub/iterator/discard_output_iterator.cuh"
 #include "cuda_helpers.h"
 #include "cuda_runtime.h"
+#include "gain.cuh"
 #include "histogram.h"
 #include "param.h"
 #include "partition.cuh"
@@ -34,27 +35,6 @@ struct PartitioningLeafs {
   }
 };
 
-struct GainFunctionParameters {
-  const unsigned int min_leaf_size;
-  const float hess;
-  const float gamma_absolute;
-  const float gamma_relative;
-  const float lambda;
-  const float alpha;
-  __host__ __device__ GainFunctionParameters(const unsigned int min_leaf_size,
-                                             const float hess,
-                                             const float gamma_absolute,
-                                             const float gamma_relative,
-                                             const float lambda,
-                                             const float alpha)
-      : min_leaf_size(min_leaf_size),
-        hess(hess),
-        gamma_absolute(gamma_absolute),
-        gamma_relative(gamma_relative),
-        lambda(lambda),
-        alpha(alpha) {}
-};
-
 __forceinline__ __device__ unsigned long long int updateAtomicMax(
   unsigned long long int *address, float val1, unsigned int val2) {
   my_atomics loc, loctest;
@@ -73,80 +53,6 @@ __global__ void scatter_kernel(const unsigned int *const __restrict__ position,
   for (size_t i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     out[position[i]] = in[i];
-  }
-}
-
-__forceinline__ __device__ __host__ float gain_func(
-  const double2 left_sum, const double2 total_sum, const size_t left_count,
-  const size_t total_count, const GainFunctionParameters &params) {
-  const double2 right_sum = total_sum - left_sum;
-  if (left_count >= params.min_leaf_size &&
-      (total_count - left_count) >= params.min_leaf_size &&
-      std::abs(left_sum.y) >= params.hess &&
-      std::abs(right_sum.y) >= params.hess) {
-    const float l = (left_sum.x * left_sum.x) / (left_sum.y + params.lambda);
-    const float r = (right_sum.x * right_sum.x) / (right_sum.y + params.lambda);
-    const float p = (total_sum.x * total_sum.x) / (total_sum.y + params.lambda);
-    const float diff = l + r - p;
-    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) *
-           diff;
-  } else {
-    return 0.0;
-  }
-}
-
-__forceinline__ __device__ __host__ float gain_func(
-  const float2 left_sum, const float2 total_sum, const size_t left_count,
-  const size_t total_count, const GainFunctionParameters &params) {
-  const float2 right_sum = total_sum - left_sum;
-  if (left_count >= params.min_leaf_size &&
-      (total_count - left_count) >= params.min_leaf_size &&
-      std::abs(left_sum.y) >= params.hess &&
-      std::abs(right_sum.y) >= params.hess) {
-    const float l = (left_sum.x * left_sum.x) / (left_sum.y + params.lambda);
-    const float r = (right_sum.x * right_sum.x) / (right_sum.y + params.lambda);
-    const float p = (total_sum.x * total_sum.x) / (total_sum.y + params.lambda);
-    const float diff = l + r - p;
-    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) *
-           diff;
-  } else {
-    return 0.0;
-  }
-}
-
-__forceinline__ __device__ __host__ float gain_func(
-  const float left_sum, const float total_sum, const size_t left_count,
-  const size_t total_count, const GainFunctionParameters &params) {
-  const size_t right_count = total_count - left_count;
-  if (left_count >= params.min_leaf_size &&
-      right_count >= params.min_leaf_size) {
-    const float right_sum = total_sum - left_sum;
-    const float l = left_sum * left_sum / (left_count + params.lambda);
-    const float r = right_sum * right_sum / (right_count + params.lambda);
-    const float p = total_sum * total_sum / (total_count + params.lambda);
-    const float diff = l + r - p;
-    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) *
-           diff;
-  } else {
-    return 0.0;
-  }
-}
-
-__forceinline__ __device__ __host__ float gain_func(
-  const double left_sum, const double total_sum, const size_t left_count,
-  const size_t total_count, const GainFunctionParameters &params) {
-  const size_t right_count = total_count - left_count;
-  if (left_count >= params.min_leaf_size &&
-      right_count >= params.min_leaf_size) {
-    const double right_sum = total_sum - left_sum;
-    const double l = left_sum * left_sum / (left_count + params.lambda);
-    const double r = right_sum * right_sum / (right_count + params.lambda);
-    const double p = total_sum * total_sum / (total_count + params.lambda);
-    const double diff = l + r - p;
-    return (diff > params.gamma_absolute && diff > params.gamma_relative * p) *
-           diff;
-  } else {
-    return 0.0;
   }
 }
 
