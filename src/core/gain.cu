@@ -19,7 +19,7 @@ inline __host__ __device__ float gain(T1 grad, T2 hess, float w, float lambda,
 template <typename T>
 inline __host__ __device__ T grad_regularized(T grad, const float alpha) {
   const T grad_abs = abs(grad);
-  return sign(grad) * min(grad_abs, abs(grad_abs - alpha));
+  return sign(grad) * max(0.0, grad_abs - alpha);
 }
 
 inline __host__ __device__ float ThresholdWeight(const float w,
