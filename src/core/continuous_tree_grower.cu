@@ -46,15 +46,14 @@ __global__ void gain_kernel(
   }
 }
 
-template <typename NODE_T, typename SUM_T>
+template <typename NODE_T, typename SUM_T, typename BIN_T>
 __global__ void filter_apply_candidates(
   my_atomics *gain_feature, SUM_T *sum, unsigned *split, unsigned *count,
   unsigned *node_size_prefix_sum_next, SUM_T *node_sum_prefix_sum_next,
-  const my_atomics *candidates, const SUM_T *split_sum,
-  const unsigned short *fvalue, const unsigned short *fvalue_sorted,
-  NODE_T *row2Node, const unsigned *node_size_prefix_sum,
-  const SUM_T *node_sum_prefix_sum, const int feature, const unsigned level,
-  const unsigned n) {
+  const my_atomics *candidates, const SUM_T *split_sum, const BIN_T *fvalue,
+  const BIN_T *fvalue_sorted, NODE_T *row2Node,
+  const unsigned *node_size_prefix_sum, const SUM_T *node_sum_prefix_sum,
+  const int feature, const unsigned level, const unsigned n) {
   // TODO: get rid of dynamic parallelism
   for (unsigned i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
@@ -77,7 +76,7 @@ __global__ void filter_apply_candidates(
         gain_feature[i] = val;
         sum[i] = split_sum_value - node_start_sum;
         count[i] = idx - node_start;
-        unsigned short threshold = fvalue_sorted[idx];
+        BIN_T threshold = fvalue_sorted[idx];
         split[i] = threshold;
 
         unsigned block_size = MAX_THREADS > node_size ? node_size : MAX_THREADS;
@@ -113,13 +112,13 @@ __global__ void filter_apply_candidates(
   }
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ContinuousTreeGrower(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ContinuousTreeGrower(
   const size_t size, const unsigned depth, const unsigned hist_size,
   const BestSplit<SUM_T> *best, Histogram<SUM_T> *features_histogram,
   const InternalConfiguration *config)
-    : BaseGrower<NODE_T, GRAD_T, SUM_T>(size, depth, best, features_histogram,
-                                        config) {
+    : BaseGrower<NODE_T, BIN_T, GRAD_T, SUM_T>(size, depth, best,
+                                               features_histogram, config) {
   node_fvalue.resize(size);
   node_fvalue_sorted.resize(size);
   sum.resize(size);
@@ -128,7 +127,7 @@ ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ContinuousTreeGrower(
   size_t temp_storage_bytes = 0;
 
   OK(cub::DeviceSegmentedRadixSort::SortPairs(
-    NULL, temp_storage_bytes, (NODE_T *)nullptr, (NODE_T *)nullptr,
+    NULL, temp_storage_bytes, (BIN_T *)nullptr, (BIN_T *)nullptr,
     (GRAD_T *)nullptr, (GRAD_T *)nullptr, size, 1 << this->depth,
     (unsigned *)nullptr, (unsigned *)nullptr, 0, 1));
 
@@ -151,7 +150,7 @@ ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ContinuousTreeGrower(
   temp_storage_bytes = 0;
 
   OK(cub::DeviceReduce::ReduceByKey(
-    NULL, temp_storage_bytes, (NODE_T *)nullptr, (NODE_T *)nullptr,
+    NULL, temp_storage_bytes, (BIN_T *)nullptr, (BIN_T *)nullptr,
     (GRAD_T *)nullptr, (SUM_T *)nullptr,
     thrust::raw_pointer_cast(run_lenght.data()), sum_op, size));
 
@@ -161,8 +160,8 @@ ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ContinuousTreeGrower(
   temp_storage_bytes = 0;
 
   OK(cub::DeviceRunLengthEncode::Encode(
-    NULL, temp_storage_bytes, (NODE_T *)nullptr, (NODE_T *)nullptr,
-    (NODE_T *)nullptr, thrust::raw_pointer_cast(run_lenght.data()), size));
+    NULL, temp_storage_bytes, (BIN_T *)nullptr, (BIN_T *)nullptr,
+    (BIN_T *)nullptr, thrust::raw_pointer_cast(run_lenght.data()), size));
 
   this->temp_bytes_allocated =
     std::max(this->temp_bytes_allocated, temp_storage_bytes);
@@ -170,26 +169,26 @@ ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ContinuousTreeGrower(
   OK(cudaMalloc(&this->temp_bytes, this->temp_bytes_allocated));
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ApplySplit(
-  NODE_T *row2Node, const unsigned level, const unsigned threshold, size_t from,
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+inline void ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ApplySplit(
+  NODE_T *row2Node, const unsigned level, const BIN_T threshold, size_t from,
   size_t to) {
   int gridSize;
   int blockSize;
-  compute1DInvokeConfig(to - from, &gridSize, &blockSize, apply_split<NODE_T>);
+  compute1DInvokeConfig(to - from, &gridSize, &blockSize,
+                        apply_split<NODE_T, BIN_T>);
 
-  apply_split<NODE_T><<<gridSize, blockSize, 0, this->stream>>>(
-    row2Node + from,
-    ((unsigned short *)thrust::raw_pointer_cast(node_fvalue.data())) + from,
+  apply_split<NODE_T, BIN_T><<<gridSize, blockSize, 0, this->stream>>>(
+    row2Node + from, thrust::raw_pointer_cast(node_fvalue.data()) + from,
     threshold, level, to - from);
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-template <typename NODE_VALUE_T>
-inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+inline void
+ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   const device_vector<unsigned> &partitioning_index,
   const device_vector<NODE_T> &row2Node, const device_vector<GRAD_T> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
+  device_vector<BIN_T> &fvalue_d, BIN_T *fvalue_h,
   const device_vector<SUM_T> &parent_node_sum,
   const device_vector<unsigned int> &parent_node_count,
   const unsigned char fvalue_size, const unsigned level, const unsigned depth,
@@ -200,14 +199,14 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   OK(cudaMemsetAsync(thrust::raw_pointer_cast(this->result_d.data()), 0,
                      lenght * sizeof(my_atomics), this->stream));
 
-  unsigned short *fvalue_tmp = NULL;
+  BIN_T *fvalue_tmp = NULL;
 
   if (!fvalue_d.empty()) {
     fvalue_tmp = thrust::raw_pointer_cast(fvalue_d.data());
   } else {
     OK(cudaMemcpyAsync(thrust::raw_pointer_cast(this->fvalue.data()), fvalue_h,
-                       this->size * sizeof(unsigned short),
-                       cudaMemcpyHostToDevice, this->stream));
+                       this->size * sizeof(BIN_T), cudaMemcpyHostToDevice,
+                       this->stream));
     fvalue_tmp = thrust::raw_pointer_cast(this->fvalue.data());
   }
 
@@ -217,31 +216,30 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
     int blockSize = 0;
 
     compute1DInvokeConfig(lenght, &gridSize, &blockSize,
-                          partition<NODE_T, unsigned short>, 0, 1);
-    partition<NODE_T, unsigned short, 2>
-      <<<gridSize, blockSize, 0, this->stream>>>(
-        (unsigned short *)thrust::raw_pointer_cast(node_fvalue.data()),
-        thrust::raw_pointer_cast(row2Node.data()), fvalue_tmp,
-        thrust::raw_pointer_cast(parent_node_count.data()), depth - level - 1,
-        this->temp_bytes_allocated, this->temp_bytes, this->size, lenght);
+                          partition<NODE_T, BIN_T>, 0, 1);
+    partition<NODE_T, BIN_T, 2><<<gridSize, blockSize, 0, this->stream>>>(
+      thrust::raw_pointer_cast(node_fvalue.data()),
+      thrust::raw_pointer_cast(row2Node.data()), fvalue_tmp,
+      thrust::raw_pointer_cast(parent_node_count.data()), depth - level - 1,
+      this->temp_bytes_allocated, this->temp_bytes, this->size, lenght);
 
     OK(cudaEventRecord(this->event, this->stream));
 
     OK(cudaStreamWaitEvent(this->copy_d2h_stream, this->event, 0));
 
     OK(cudaMemcpyAsync(fvalue_h, thrust::raw_pointer_cast(node_fvalue.data()),
-                       this->size * sizeof(unsigned short),
-                       cudaMemcpyDeviceToHost, this->copy_d2h_stream));
+                       this->size * sizeof(BIN_T), cudaMemcpyDeviceToHost,
+                       this->copy_d2h_stream));
 
     if (!fvalue_d.empty()) {
       OK(cudaMemcpyAsync(thrust::raw_pointer_cast(fvalue_d.data()),
                          thrust::raw_pointer_cast(node_fvalue.data()),
-                         this->size * sizeof(unsigned short),
-                         cudaMemcpyDeviceToDevice, this->copy_d2h_stream));
+                         this->size * sizeof(BIN_T), cudaMemcpyDeviceToDevice,
+                         this->copy_d2h_stream));
     }
 
     this->d_fvalue_partitioned =
-      (unsigned short *)thrust::raw_pointer_cast(node_fvalue.data());
+      (BIN_T *)thrust::raw_pointer_cast(node_fvalue.data());
 
   } else {
     this->d_fvalue_partitioned = fvalue_tmp;
@@ -250,9 +248,9 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   if (partition_only) return;
 
   // FIXME: fvalue_size + 1 or just fvalue_size?
-  CubDebugExit(cub::DeviceSegmentedRadixSort::SortPairs(
+  OK(cub::DeviceSegmentedRadixSort::SortPairs(
     this->temp_bytes, this->temp_bytes_allocated, this->d_fvalue_partitioned,
-    (unsigned short *)thrust::raw_pointer_cast(node_fvalue_sorted.data()),
+    thrust::raw_pointer_cast(node_fvalue_sorted.data()),
     thrust::raw_pointer_cast(grad_d.data()),
     thrust::raw_pointer_cast(this->grad_sorted.data()), this->size, 1 << level,
     thrust::raw_pointer_cast(parent_node_count.data()),
@@ -271,14 +269,14 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
 
   gain_kernel<<<this->gridSizeGain, this->blockSizeGain, 0, this->stream>>>(
     thrust::raw_pointer_cast(sum.data()),
-    (unsigned short *)thrust::raw_pointer_cast(node_fvalue_sorted.data()),
-    lenght, thrust::raw_pointer_cast(parent_node_sum.data()),
+    thrust::raw_pointer_cast(node_fvalue_sorted.data()), lenght,
+    thrust::raw_pointer_cast(parent_node_sum.data()),
     thrust::raw_pointer_cast(parent_node_count.data()), this->size, gain_param,
     thrust::raw_pointer_cast(this->result_d.data()));
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+inline void ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::FindBest(
   BestSplit<SUM_T> &best, device_vector<NODE_T> &row2Node,
   const device_vector<SUM_T> &parent_node_sum,
   const device_vector<unsigned int> &parent_node_count, const unsigned fid,
@@ -287,9 +285,9 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
   int blockSize = 0;
 
   compute1DInvokeConfig(size, &gridSize, &blockSize,
-                        filter_apply_candidates<NODE_T, SUM_T>);
+                        filter_apply_candidates<NODE_T, SUM_T, BIN_T>);
 
-  filter_apply_candidates<NODE_T, SUM_T>
+  filter_apply_candidates<NODE_T, SUM_T, BIN_T>
     <<<gridSize, blockSize, 0, this->stream>>>(
       thrust::raw_pointer_cast(best.gain_feature.data()),
       thrust::raw_pointer_cast(best.sum.data()),
@@ -299,378 +297,50 @@ inline void ContinuousTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
       thrust::raw_pointer_cast(best.parent_node_sum_next.data()),
       thrust::raw_pointer_cast(this->result_d.data()),
       thrust::raw_pointer_cast(this->sum.data()), this->d_fvalue_partitioned,
-      (unsigned short *)thrust::raw_pointer_cast(
-        this->node_fvalue_sorted.data()),
+      (BIN_T *)thrust::raw_pointer_cast(this->node_fvalue_sorted.data()),
       thrust::raw_pointer_cast(row2Node.data()),
       thrust::raw_pointer_cast(parent_node_count.data()),
       thrust::raw_pointer_cast(parent_node_sum.data()), fid, depth - level - 2,
       size);
 }
 
-template class ContinuousTreeGrower<unsigned, float, float>;
+// clang-format off
+/*[[[cog
+import cog
+for t in [('float', 'float'), ('float', 'double'), ('float2', 'float2'), ('float2', 'mydouble2')]:
+    for bin_type in ['unsigned int', 'unsigned short', 'unsigned char']:
+        cog.outl("template class ContinuousTreeGrower<{0}, unsigned int, {1}, {2}>;".format(
+      bin_type, t[0], t[1]))
+        cog.outl("template class ContinuousTreeGrower<{0}, unsigned short, {1}, {2}>;".format(
+      bin_type, t[0], t[1]))
 
-template void
-ContinuousTreeGrower<unsigned, float, float>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<float> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void ContinuousTreeGrower<unsigned, float, float>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned> &row2Node,
-                 const device_vector<float> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<float> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class ContinuousTreeGrower<unsigned, float, double>;
-
-template void
-ContinuousTreeGrower<unsigned, float, double>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<double> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void ContinuousTreeGrower<unsigned, float, double>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<double> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class ContinuousTreeGrower<unsigned, float2, float2>;
-
-template void
-ContinuousTreeGrower<unsigned, float2, float2>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float2> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<float2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-ContinuousTreeGrower<unsigned, float2, float2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<float2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class ContinuousTreeGrower<unsigned, float2, mydouble2>;
-
-template void
-ContinuousTreeGrower<unsigned, float2, mydouble2>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned> &row2Node,
-            const device_vector<float2> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<mydouble2> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void
-ContinuousTreeGrower<unsigned, float2, mydouble2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<mydouble2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class ContinuousTreeGrower<unsigned short, float, float>;
-template class ContinuousTreeGrower<unsigned short, float, double>;
-template class ContinuousTreeGrower<unsigned short, float2, float2>;
-template class ContinuousTreeGrower<unsigned short, float2, mydouble2>;
-
-template class ContinuousTreeGrower<unsigned char, float, float>;
-template class ContinuousTreeGrower<unsigned char, float, double>;
-template class ContinuousTreeGrower<unsigned char, float2, float2>;
-template class ContinuousTreeGrower<unsigned char, float2, mydouble2>;
-
-template class ContinuousTreeGrower<unsigned long, float, float>;
-
-template void
-ContinuousTreeGrower<unsigned long, float, float>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long> &row2Node,
-            const device_vector<float> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<float> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void ContinuousTreeGrower<unsigned long, float, float>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class ContinuousTreeGrower<unsigned long, float, double>;
-
-template void
-ContinuousTreeGrower<unsigned long, float, double>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long> &row2Node,
-            const device_vector<float> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<double> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void ContinuousTreeGrower<unsigned long, float, double>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<double> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class ContinuousTreeGrower<unsigned long, float2, float2>;
-
-template void
-ContinuousTreeGrower<unsigned long, float2, float2>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long> &row2Node,
-            const device_vector<float2> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<float2> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void
-ContinuousTreeGrower<unsigned long, float2, float2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<float2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class ContinuousTreeGrower<unsigned long, float2, mydouble2>;
-
-template void
-ContinuousTreeGrower<unsigned long, float2, mydouble2>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long> &row2Node,
-            const device_vector<float2> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<mydouble2> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void
-ContinuousTreeGrower<unsigned long, float2, mydouble2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<mydouble2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class ContinuousTreeGrower<unsigned long long, float, float>;
-
-template void
-ContinuousTreeGrower<unsigned long long, float, float>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long long> &row2Node,
-            const device_vector<float> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<float> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float, float>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float, float>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class ContinuousTreeGrower<unsigned long long, float, double>;
-
-template void
-ContinuousTreeGrower<unsigned long long, float, double>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long long> &row2Node,
-            const device_vector<float> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<double> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float, double>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<double> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float, double>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<double> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class ContinuousTreeGrower<unsigned long long, float2, float2>;
-
-template void
-ContinuousTreeGrower<unsigned long long, float2, float2>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long long> &row2Node,
-            const device_vector<float2> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<float2> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void
-ContinuousTreeGrower<unsigned long long, float2, float2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<float2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float2, float2>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float2> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<float2> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class ContinuousTreeGrower<unsigned long long, float2, mydouble2>;
-
-template void ContinuousTreeGrower<unsigned long long, float2, mydouble2>::
-  ProcessDenseFeature<unsigned>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float2> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<mydouble2> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float2, mydouble2>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float2> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<mydouble2> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template void ContinuousTreeGrower<unsigned long long, float2, mydouble2>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float2> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<mydouble2> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
+]]]*/
+template class ContinuousTreeGrower<unsigned int, unsigned int, float, float>;
+template class ContinuousTreeGrower<unsigned int, unsigned short, float, float>;
+template class ContinuousTreeGrower<unsigned short, unsigned int, float, float>;
+template class ContinuousTreeGrower<unsigned short, unsigned short, float, float>;
+template class ContinuousTreeGrower<unsigned char, unsigned int, float, float>;
+template class ContinuousTreeGrower<unsigned char, unsigned short, float, float>;
+template class ContinuousTreeGrower<unsigned int, unsigned int, float, double>;
+template class ContinuousTreeGrower<unsigned int, unsigned short, float, double>;
+template class ContinuousTreeGrower<unsigned short, unsigned int, float, double>;
+template class ContinuousTreeGrower<unsigned short, unsigned short, float, double>;
+template class ContinuousTreeGrower<unsigned char, unsigned int, float, double>;
+template class ContinuousTreeGrower<unsigned char, unsigned short, float, double>;
+template class ContinuousTreeGrower<unsigned int, unsigned int, float2, float2>;
+template class ContinuousTreeGrower<unsigned int, unsigned short, float2, float2>;
+template class ContinuousTreeGrower<unsigned short, unsigned int, float2, float2>;
+template class ContinuousTreeGrower<unsigned short, unsigned short, float2, float2>;
+template class ContinuousTreeGrower<unsigned char, unsigned int, float2, float2>;
+template class ContinuousTreeGrower<unsigned char, unsigned short, float2, float2>;
+template class ContinuousTreeGrower<unsigned int, unsigned int, float2, mydouble2>;
+template class ContinuousTreeGrower<unsigned int, unsigned short, float2, mydouble2>;
+template class ContinuousTreeGrower<unsigned short, unsigned int, float2, mydouble2>;
+template class ContinuousTreeGrower<unsigned short, unsigned short, float2, mydouble2>;
+template class ContinuousTreeGrower<unsigned char, unsigned int, float2, mydouble2>;
+template class ContinuousTreeGrower<unsigned char, unsigned short, float2, mydouble2>;
+//[[[end]]] (checksum: f58c2c982b43db032408d6f7dd00111e)
+// clang-format on
 
 }  // namespace core
 }  // namespace arboretum

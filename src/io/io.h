@@ -19,15 +19,10 @@ class DataMatrix {
     data_categories;
 
   std::vector<thrust::host_vector<float>> data;
-  std::vector<thrust::host_vector<
-    unsigned short,
-    thrust::cuda::experimental::pinned_allocator<unsigned short>>>
-    data_reduced;
 
   std::vector<std::vector<float>> data_reduced_mapping;
 
   std::vector<thrust::device_vector<unsigned short>> data_category_device;
-  std::vector<thrust::device_vector<unsigned short>> sorted_data_device;
 
   thrust::host_vector<float> y;
   thrust::host_vector<float> y_hat;
@@ -46,11 +41,44 @@ class DataMatrix {
   void InitHist(int hist_size, bool verbose);
   void UpdateGrad();
   void TransferToGPU(const size_t free, bool verbose);
+
+  template <typename T>
+  thrust::host_vector<T, thrust::cuda::experimental::pinned_allocator<T>>
+    &GetHostData(int column);
+
+  template <typename T>
+  thrust::device_vector<T> &GetDeviceData(int column);
+
   DataMatrix(int rows, int columns, int columns_category);
 
  private:
   bool _init;
   std::vector<unsigned int> SortedIndex(int column);
+
+  template <typename T>
+  void InitHistInternal(int hist_size, bool verbose);
+
+template <typename T>
+  void TransferToGPUInternal(const size_t free, bool verbose);
+
+  std::vector<thrust::host_vector<
+    unsigned int, thrust::cuda::experimental::pinned_allocator<unsigned int>>>
+    data_reduced_u32;
+
+  std::vector<thrust::host_vector<
+    unsigned short,
+    thrust::cuda::experimental::pinned_allocator<unsigned short>>>
+    data_reduced_u16;
+
+  std::vector<thrust::host_vector<
+    unsigned char, thrust::cuda::experimental::pinned_allocator<unsigned char>>>
+    data_reduced_u8;
+
+  std::vector<thrust::device_vector<unsigned int>> data_reduced_u32_device;
+
+  std::vector<thrust::device_vector<unsigned short>> data_reduced_u16_device;
+
+  std::vector<thrust::device_vector<unsigned char>> data_reduced_u8_device;
 };
 }  // namespace io
 }  // namespace arboretum

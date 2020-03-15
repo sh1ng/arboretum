@@ -10,7 +10,7 @@ RUN yum install -y python3 python3-pip python3-devel cmake3
 
 RUN python3 -m pip install -U  pip
 
-RUN python3 -m pip install setuptools wheel numpy scipy
+RUN python3 -m pip install setuptools wheel numpy scipy cogapp
 
 RUN ln -s /usr/bin/cmake3 /usr/bin/cmake
 

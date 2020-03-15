@@ -73,7 +73,7 @@ __global__ void update_by_last_tree(float *y, const SUM_T *best_sum,
   }
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T,
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T,
           typename TREE_GROWER>
 class ContinuousGardenBuilder : public GardenBuilderBase {
  public:
@@ -315,31 +315,10 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
       size_t circular_fid = j % overlap_depth;
 
       if (active_fids[j] < data->columns_dense) {
-        // FIXME:
-        // if ((data->reduced_size[active_fids[j]] + level) <
-        //     sizeof(unsigned char) * CHAR_BIT) {
-        //   GetBestSplitForDenseFeature<unsigned char>(
-        //       active_fids[j], circular_fid, level,
-        //       data->data_reduced_mapping[active_fids[j]],
-        //       data->reduced_size[active_fids[j]]);
-        // } else if ((data->reduced_size[active_fids[j]] + level) <
-        //            sizeof(unsigned short) * CHAR_BIT) {
-        //   GetBestSplitForDenseFeature<unsigned short>(
-        //       active_fids[j], circular_fid, level,
-        //       data->data_reduced_mapping[active_fids[j]],
-        //       data->reduced_size[active_fids[j]]);
-        // } else if ((data->reduced_size[active_fids[j]] + level) <
-        //            sizeof(unsigned int) * CHAR_BIT) {
-        GetBestSplitForDenseFeature<unsigned int>(
-          active_fids[j], circular_fid, level,
-          data->data_reduced_mapping[active_fids[j]],
-          data->reduced_size[active_fids[j]], j >= take);
-        // } else {
-        //   GetBestSplitForDenseFeature<NODE_T>(
-        //       active_fids[j], circular_fid, level,
-        //       data->data_reduced_mapping[active_fids[j]],
-        //       data->reduced_size[active_fids[j]]);
-        // }
+        GetBestSplitForDenseFeature(active_fids[j], circular_fid, level,
+                                    data->data_reduced_mapping[active_fids[j]],
+                                    data->reduced_size[active_fids[j]],
+                                    j >= take);
       } else {
         if ((data->category_size[active_fids[j] - data->columns_dense] +
              level) < sizeof(unsigned char) * CHAR_BIT) {
@@ -363,15 +342,8 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
         }
       }
     }
-
-    // growers[0]->template Partition<GRAD_T, 1>(
-    //   thrust::raw_pointer_cast(grad_d.data()),
-    //   thrust::raw_pointer_cast(row2Node.data()), parent_node_count, level,
-    //   param.depth);
   }
 
-  // FIXME: use template
-  template <typename NODE_VALUE_T>
   inline void GetBestSplitForDenseFeature(
     const int active_fid, const size_t circular_fid, const unsigned level,
     const std::vector<float> &data_reduced_mapping, const unsigned reduced_size,
@@ -399,48 +371,13 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   void ProcessDenseFeature(const size_t active_fid, const size_t circular_fid,
                            const size_t level, io::DataMatrix *data,
                            const bool partition_only) {
-    // if ((data->reduced_size[active_fid]) < sizeof(unsigned char) *
-    // CHAR_BIT)
-    // {
-    //   growers[circular_fid]->template ProcessDenseFeature<unsigned char>(
-    //       row2Node, grad_d,
-    //       data->sorted_data_device[active_fid].size() > 0
-    //           ? thrust::raw_pointer_cast(
-    //                 data->sorted_data_device[active_fid].data())
-    //           : nullptr,
-    //       thrust::raw_pointer_cast(data->data_reduced[active_fid].data()),
-    //       parent_node_sum, parent_node_count,
-    //       data->reduced_size[active_fid], level, gain_param);
-    // } else if ((data->reduced_size[active_fid]) <
-    //            sizeof(unsigned short) * CHAR_BIT) {
-    //   growers[circular_fid]->template ProcessDenseFeature<unsigned short>(
-    //       row2Node, grad_d,
-    //       data->sorted_data_device[active_fid].size() > 0
-    //           ? thrust::raw_pointer_cast(
-    //                 data->sorted_data_device[active_fid].data())
-    //           : nullptr,
-    //       thrust::raw_pointer_cast(data->data_reduced[active_fid].data()),
-    //       parent_node_sum, parent_node_count,
-    //       data->reduced_size[active_fid], level, gain_param);
-    // } else if ((data->reduced_size[active_fid]) <
-    //            sizeof(unsigned int) * CHAR_BIT) {
-    //   growers[circular_fid]->template ProcessDenseFeature<unsigned int>(
-    //       row2Node, grad_d,
-    //       data->sorted_data_device[active_fid].size() > 0
-    //           ? thrust::raw_pointer_cast(
-    //                 data->sorted_data_device[active_fid].data())
-    //           : nullptr,
-    //       thrust::raw_pointer_cast(data->data_reduced[active_fid].data()),
-    //       parent_node_sum, parent_node_count,
-    //       data->reduced_size[active_fid], level, gain_param);
-    // } else {
-    growers[circular_fid]->template ProcessDenseFeature<NODE_T>(
-      partitioning_index, row2Node, grad, data->sorted_data_device[active_fid],
-      thrust::raw_pointer_cast(data->data_reduced[active_fid].data()),
+        growers[circular_fid]->ProcessDenseFeature(
+      partitioning_index, row2Node, grad,
+      data->GetDeviceData<BIN_T>(active_fid),
+      thrust::raw_pointer_cast(data->GetHostData<BIN_T>(active_fid).data()),
       this->best.parent_node_sum, this->best.parent_node_count,
       data->reduced_size[active_fid], level, param.depth, gain_param,
       partition_only, active_fid);
-    // }
   }
 
   inline void ProcessCategoryFeature(const size_t active_fid,
@@ -495,7 +432,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
         thrust::raw_pointer_cast(grad.data()),
         thrust::raw_pointer_cast(&best.parent_node_sum[1]), data->rows));
 
-      CubDebugExit(cudaDeviceSynchronize());
+      OK(cudaDeviceSynchronize());
     }
 
     for (unsigned i = 0; i < len; ++i) {
@@ -508,10 +445,10 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   void UpdateTree(const int level, RegTree *tree, io::DataMatrix *data) {
     const unsigned int offset = Node::HeapOffset(level);
     const size_t len = 1 << level;
-    CubDebugExit(cudaDeviceSynchronize());
+    OK(cudaDeviceSynchronize());
 
     best.Sync(1 << level);
-    CubDebugExit(cudaDeviceSynchronize());
+    OK(cudaDeviceSynchronize());
 
     for (unsigned i = 0; i < len; ++i) {
       const unsigned quantized = best.split_value_h[i];
@@ -564,6 +501,64 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   }
 };
 
+template <typename NODE_TYPE, typename GRAD_TYPE, typename SUM_TYPE>
+GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+                           ApproximatedObjectiveBase *objective) {
+  if (cfg.method == Exact)
+    return new ContinuousGardenBuilder<
+      NODE_TYPE, unsigned int, GRAD_TYPE, SUM_TYPE,
+      ContinuousTreeGrower<NODE_TYPE, unsigned int, GRAD_TYPE, SUM_TYPE>>(
+      cfg.tree_param, data, cfg.internal, objective, cfg.verbose.booster);
+  else if (data->max_reduced_size <= sizeof(unsigned char) * CHAR_BIT)
+    return new ContinuousGardenBuilder<
+      NODE_TYPE, unsigned char, GRAD_TYPE, SUM_TYPE,
+      HistTreeGrower<NODE_TYPE, unsigned char, GRAD_TYPE, SUM_TYPE>>(
+      cfg.tree_param, data, cfg.internal, objective, cfg.verbose.booster);
+  else
+    return new ContinuousGardenBuilder<
+      NODE_TYPE, unsigned short, GRAD_TYPE, SUM_TYPE,
+      HistTreeGrower<NODE_TYPE, unsigned short, GRAD_TYPE, SUM_TYPE>>(
+      cfg.tree_param, data, cfg.internal, objective, cfg.verbose.booster);
+}
+
+template <typename GRAD_TYPE, typename SUM_TYPE>
+GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+                           ApproximatedObjectiveBase *objective) {
+  if (cfg.tree_param.depth < sizeof(unsigned char) * CHAR_BIT)
+    return chained<unsigned char, GRAD_TYPE, SUM_TYPE>(cfg, data, objective);
+  else if (cfg.tree_param.depth < sizeof(unsigned short) * CHAR_BIT)
+    return chained<unsigned short, GRAD_TYPE, SUM_TYPE>(cfg, data, objective);
+  else if (cfg.tree_param.depth < sizeof(unsigned int) * CHAR_BIT)
+    return chained<unsigned int, GRAD_TYPE, SUM_TYPE>(cfg, data, objective);
+  else
+    throw "unsupported depth";
+}
+
+template <typename GRAD_TYPE>
+GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+                           ApproximatedObjectiveBase *objective);
+
+template <>
+GardenBuilderBase *chained<float>(const Configuration cfg, io::DataMatrix *data,
+                                  ApproximatedObjectiveBase *objective) {
+  return chained<float, float>(cfg, data, objective);
+}
+
+template <>
+GardenBuilderBase *chained<float2>(const Configuration cfg,
+                                   io::DataMatrix *data,
+                                   ApproximatedObjectiveBase *objective) {
+  return chained<float2, float2>(cfg, data, objective);
+}
+
+GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+                           ApproximatedObjectiveBase *objective) {
+  if (cfg.objective == LinearRegression)
+    return chained<float>(cfg, data, objective);
+  else
+    return chained<float2>(cfg, data, objective);
+}
+
 Garden::Garden(const Configuration &cfg)
     : cfg(cfg), _init(false), _builder(nullptr), _objective(nullptr) {
   switch (cfg.objective) {
@@ -585,381 +580,8 @@ void Garden::GrowTree(io::DataMatrix *data, float *grad) {
     data->InitHist(cfg.internal.hist_size, cfg.verbose.data);
 
   if (!_init) {
-    switch (cfg.objective) {
-      case LinearRegression: {
-        if (data->max_feature_size + 1 <= sizeof(unsigned char) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, double,
-                ContinuousTreeGrower<unsigned, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, double,
-                HistTreeGrower<unsigned, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, float,
-                ContinuousTreeGrower<unsigned, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, float, HistTreeGrower<unsigned, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned short) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.tree_param.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, double,
-                ContinuousTreeGrower<unsigned, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, double,
-                HistTreeGrower<unsigned, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.tree_param.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, float,
-                ContinuousTreeGrower<unsigned, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float, float, HistTreeGrower<unsigned, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned int) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float, double,
-                ContinuousTreeGrower<unsigned, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float, double,
-                HistTreeGrower<unsigned, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
+    _builder = chained(cfg, data, _objective);
 
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float, float,
-                ContinuousTreeGrower<unsigned, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float, float,
-                HistTreeGrower<unsigned, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned long) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float, double,
-                ContinuousTreeGrower<unsigned long, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float, double,
-                HistTreeGrower<unsigned long, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float, float,
-                ContinuousTreeGrower<unsigned long, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float, float,
-                HistTreeGrower<unsigned long, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned long long) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long long, float, double,
-                ContinuousTreeGrower<unsigned long long, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long long, float, double,
-                HistTreeGrower<unsigned long long, float, double>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long long, float, float,
-                ContinuousTreeGrower<unsigned long long, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long long, float, float,
-                HistTreeGrower<unsigned long long, float, float>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else {
-          throw "unsupported dimensionality";
-        }
-      }
-
-      break;
-      case LogisticRegression: {
-        if (data->max_feature_size + 1 <= sizeof(unsigned char) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, mydouble2,
-                ContinuousTreeGrower<unsigned, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, mydouble2,
-                HistTreeGrower<unsigned, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, float2,
-                ContinuousTreeGrower<unsigned, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, float2,
-                HistTreeGrower<unsigned, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned short) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, mydouble2,
-                ContinuousTreeGrower<unsigned, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, mydouble2,
-                HistTreeGrower<unsigned, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, float2,
-                ContinuousTreeGrower<unsigned, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned, float2, float2,
-                HistTreeGrower<unsigned, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned int) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float2, mydouble2,
-                ContinuousTreeGrower<unsigned, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float2, mydouble2,
-                HistTreeGrower<unsigned, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float2, float2,
-                ContinuousTreeGrower<unsigned, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned int, float2, float2,
-                HistTreeGrower<unsigned, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned long) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float2, mydouble2,
-                ContinuousTreeGrower<unsigned long, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float2, mydouble2,
-                HistTreeGrower<unsigned long, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float2, float2,
-                ContinuousTreeGrower<unsigned long, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float2, float2,
-                HistTreeGrower<unsigned long, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else if (data->max_feature_size + 1 <=
-                   sizeof(unsigned long long) * CHAR_BIT) {
-          if (cfg.internal.double_precision) {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float2, mydouble2,
-                ContinuousTreeGrower<unsigned long, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long, float2, mydouble2,
-                HistTreeGrower<unsigned long, float2, mydouble2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          } else {
-            if (cfg.method == Exact)
-              _builder = new ContinuousGardenBuilder<
-                unsigned long long, float2, float2,
-                ContinuousTreeGrower<unsigned long long, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-            else
-              _builder = new ContinuousGardenBuilder<
-                unsigned long long, float2, float2,
-                HistTreeGrower<unsigned long long, float2, float2>>(
-                cfg.tree_param, data, cfg.internal, _objective,
-                cfg.verbose.booster);
-          }
-        } else {
-          throw "unsupported dimensionality";
-        }
-      } break;
-        //   case SoftMaxOneVsAll: {
-        //     auto obj =
-        //       new SoftMaxObjective(data, param.labels_count,
-        //       param.initial_y);
-
-        //     if (data->max_feature_size + 1 <= sizeof(unsigned char) *
-        //     CHAR_BIT) {
-        //       if (cfg.double_precision) {
-        //         _builder = new ContinuousGardenBuilder<unsigned, float2,
-        //         mydouble2>(
-        //           param, data, cfg, obj, verbose.booster);
-        //       } else {
-        //         _builder = new ContinuousGardenBuilder<unsigned, float2,
-        //         float2>(
-        //           param, data, cfg, obj, verbose.booster);
-        //       }
-        //     } else if (data->max_feature_size + 1 <=
-        //                sizeof(unsigned short) * CHAR_BIT) {
-        //       if (cfg.double_precision) {
-        //         _builder = new ContinuousGardenBuilder<unsigned, float2,
-        //         mydouble2>(
-        //           param, data, cfg, obj, verbose.booster);
-        //       } else {
-        //         _builder = new ContinuousGardenBuilder<unsigned, float2,
-        //         float2>(
-        //           param, data, cfg, obj, verbose.booster);
-        //       }
-        //     } else if (data->max_feature_size + 1 <=
-        //                sizeof(unsigned int) * CHAR_BIT) {
-        //       if (cfg.double_precision) {
-        //         _builder =
-        //           new ContinuousGardenBuilder<unsigned int, float2,
-        //           mydouble2>(
-        //             param, data, cfg, obj, verbose.booster);
-        //       } else {
-        //         _builder =
-        //           new ContinuousGardenBuilder<unsigned int, float2, float2>(
-        //             param, data, cfg, obj, verbose.booster);
-        //       }
-        //     } else if (data->max_feature_size + 1 <=
-        //                sizeof(unsigned long) * CHAR_BIT) {
-        //       if (cfg.double_precision) {
-        //         _builder =
-        //           new ContinuousGardenBuilder<unsigned long, float2,
-        //           mydouble2>(
-        //             param, data, cfg, obj, verbose.booster);
-        //       } else {
-        //         _builder =
-        //           new ContinuousGardenBuilder<unsigned long, float2, float2>(
-        //             param, data, cfg, obj, verbose.booster);
-        //       }
-        //     } else if (data->max_feature_size + 1 <=
-        //                sizeof(unsigned long long) * CHAR_BIT) {
-        //       if (cfg.double_precision) {
-        //         _builder = new ContinuousGardenBuilder<unsigned long long,
-        //         float2,
-        //                                                mydouble2>(
-        //           param, data, cfg, obj, verbose.booster);
-        //       } else {
-        //         _builder =
-        //           new ContinuousGardenBuilder<unsigned long long, float2,
-        //           float2>(
-        //             param, data, cfg, obj, verbose.booster);
-        //       }
-        //     } else {
-        //       throw "unsupported depth";
-        //     }
-        //     _objective = obj;
-        //   } break;
-      default:
-        throw "Unknown objective function " + cfg.objective;
-    }
-
-    // auto mem_per_rec = _builder->MemoryRequirementsPerRecord();
     size_t total;
     size_t free;
 

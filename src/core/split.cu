@@ -34,10 +34,21 @@ float Split<GRAD_TYPE>::LeafWeight(const unsigned parent_size,
   return Weight(parent_sum - sum_grad, parent_size - count, param);
 };
 
-template struct Split<float>;
-template struct Split<double>;
-template struct Split<float2>;
-template struct Split<mydouble2>;
+/*[[[cog
+import cog
+types = ['float', 'double', 'float2', 'mydouble2']
+cog.outl("// clang-format off")
+for t in types:
+    cog.outl("template class Split<%s>;" % t)
+cog.outl("// clang-format on")
+]]]*/
+// clang-format off
+template class Split<float>;
+template class Split<double>;
+template class Split<float2>;
+template class Split<mydouble2>;
+// clang-format on
+//[[[end]]] (checksum: 9ae16fc3222eb9fed20370d2642626d0)
 
 }  // namespace core
 }  // namespace arboretum

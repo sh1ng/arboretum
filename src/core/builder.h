@@ -102,10 +102,10 @@ __global__ void gain_kernel_category(
   }
 }
 
-template <typename NODE_T>
-__global__ void apply_split(NODE_T *row2Node, const unsigned short *fvalues,
-                            const unsigned int threshold,
-                            const unsigned int level, const unsigned n) {
+template <typename NODE_T, typename BIN_T>
+__global__ void apply_split(NODE_T *row2Node, const BIN_T *fvalues,
+                            const BIN_T threshold, const unsigned int level,
+                            const unsigned n) {
   for (unsigned i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     const unsigned right = unsigned(fvalues[i] >= threshold);
@@ -169,7 +169,7 @@ __global__ void partition(T *dst, const NODE_T *row2Node, const T *src,
   }
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
 class BaseGrower {
  public:
   BaseGrower(const size_t size, const unsigned depth,
@@ -324,8 +324,8 @@ class BaseGrower {
   cudaStream_t copy_d2h_stream;
   cudaEvent_t event;
   device_vector<SUM_T> sum;
-  device_vector<unsigned short> fvalue;
-  device_vector<unsigned short> fvalue_dst;
+  device_vector<BIN_T> fvalue;
+  device_vector<BIN_T> fvalue_dst;
   device_vector<my_atomics> result_d;
   size_t temp_bytes_allocated;
   void *temp_bytes;
@@ -338,7 +338,7 @@ class BaseGrower {
   int blockSizeGather;
   int gridSizeGather;
   device_vector<GRAD_T> grad_sorted;
-  unsigned short *d_fvalue_partitioned;
+  BIN_T *d_fvalue_partitioned;
   const BestSplit<SUM_T> *best;
   Histogram<SUM_T> *features_histogram;
   const InternalConfiguration *config;

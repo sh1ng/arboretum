@@ -34,12 +34,12 @@ __global__ void hist_gain_kernel(
   }
 }
 
-template <typename NODE_T, typename SUM_T>
+template <typename NODE_T, typename SUM_T, typename BIN_T>
 __global__ void hist_apply_candidates(
   my_atomics *gain_feature, SUM_T *sum, unsigned *split, unsigned *count,
   unsigned *node_size_prefix_sum_next, SUM_T *node_sum_prefix_sum_next,
   const my_atomics *candidates, const SUM_T *split_sum,
-  const unsigned *split_count, const unsigned short *fvalue, NODE_T *row2Node,
+  const unsigned *split_count, const BIN_T *fvalue, NODE_T *row2Node,
   const unsigned *node_size_prefix_sum, const SUM_T *node_sum_prefix_sum,
   const int feature, const unsigned level, const unsigned hist_size,
   const unsigned n) {
@@ -64,7 +64,7 @@ __global__ void hist_apply_candidates(
         gain_feature[i] = val;
         sum[i] = split_sum[idx] - node_start_sum;
         count[i] = split_count_value - node_start;
-        unsigned threshold = idx % hist_size;
+        BIN_T threshold = idx % hist_size;
         split[i] = threshold;
 
         unsigned block_size = MAX_THREADS > node_size ? node_size : MAX_THREADS;
@@ -72,7 +72,7 @@ __global__ void hist_apply_candidates(
           unsigned((node_size + block_size - 1) / block_size);
         cudaStream_t s;
         DEVICE_OK(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking));
-        apply_split<NODE_T><<<grid_size, block_size, 0, s>>>(
+        apply_split<NODE_T, BIN_T><<<grid_size, block_size, 0, s>>>(
           row2Node + node_start, fvalue + node_start, threshold + 1, level,
           node_size);
         DEVICE_OK(cudaDeviceSynchronize());
@@ -101,13 +101,13 @@ __global__ void hist_apply_candidates(
   }
 }  // namespace core
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistTreeGrower(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistTreeGrower(
   const size_t size, const unsigned depth, const unsigned hist_size,
   const BestSplit<SUM_T> *best, Histogram<SUM_T> *features_histogram,
   const InternalConfiguration *config)
-    : BaseGrower<NODE_T, GRAD_T, SUM_T>(size, depth, best, features_histogram,
-                                        config),
+    : BaseGrower<NODE_T, BIN_T, GRAD_T, SUM_T>(size, depth, best,
+                                               features_histogram, config),
       hist_size(hist_size) {
   assert(hist_size > 0);
   unsigned index = hist_size;
@@ -120,13 +120,14 @@ HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistTreeGrower(
   hist_bin_count.resize(total_hist_size);
   hist_prefix_count.resize(total_hist_size);
 
-  cudaFuncSetCacheConfig(hist_sum_node<SUM_T, GRAD_T>,
+  // TODO: fix BIN_TYPE
+  cudaFuncSetCacheConfig(hist_sum_node<SUM_T, GRAD_T, BIN_T>,
                          cudaFuncCachePreferShared);
 
-  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T, true>,
+  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T, BIN_T, true>,
                          cudaFuncCachePreferShared);
 
-  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T, false>,
+  cudaFuncSetCacheConfig(hist_sum_multi_node<SUM_T, GRAD_T, BIN_T, false>,
                          cudaFuncCachePreferShared);
 
   size_t temp_storage_bytes = 0;
@@ -195,13 +196,13 @@ HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistTreeGrower(
   OK(cudaMalloc(&this->temp_bytes, this->temp_bytes_allocated));
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+void HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSum(
   SUM_T *sum, unsigned *bin_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *grad,
-  const unsigned *node_size, const unsigned short *fvalue,
-  const unsigned hist_size_bits, const unsigned hist_size, const unsigned size,
-  const bool use_trick, cudaStream_t stream) {
+  const unsigned *node_size, const BIN_T *fvalue, const unsigned hist_size_bits,
+  const unsigned hist_size, const unsigned size, const bool use_trick,
+  cudaStream_t stream) {
   unsigned min_grid_size = 256;
   int blocks_per_node = 4;
 
@@ -211,7 +212,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
   const unsigned gridSize = size * (1 << blocks_per_node);
 
   if (use_trick) {
-    hist_sum_multi_node<SUM_T, GRAD_T, true>
+    hist_sum_multi_node<SUM_T, GRAD_T, BIN_T, true>
       <<<gridSize / 2, blockSize, 0, stream>>>(
         sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
         fvalue, hist_size, hist_size_bits, blocks_per_node);
@@ -225,20 +226,20 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
       node_size, hist_size, hist_size * size / 2);
 
   } else {
-    hist_sum_multi_node<SUM_T, GRAD_T, false>
+    hist_sum_multi_node<SUM_T, GRAD_T, BIN_T, false>
       <<<gridSize, blockSize, 0, stream>>>(
         sum, bin_count, hist_sum_parent, hist_count_parent, grad, node_size,
         fvalue, hist_size, hist_size_bits, blocks_per_node);
   }
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumStatic(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+void HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSumStatic(
   SUM_T *sum, unsigned *bin_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *grad,
-  const unsigned *node_size, const unsigned short *fvalue,
-  const unsigned hist_size_bits, const unsigned hist_size, const unsigned size,
-  const bool use_trick, cudaStream_t stream) {
+  const unsigned *node_size, const BIN_T *fvalue, const unsigned hist_size_bits,
+  const unsigned hist_size, const unsigned size, const bool use_trick,
+  cudaStream_t stream) {
   if (use_trick) {
     assert(size % 2 == 0);
     for (unsigned i = 0; i < size / 2; ++i) {
@@ -256,7 +257,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumStatic(
       unsigned segment_size =
         node_size[smaller_segment_id + 1] - node_size[smaller_segment_id];
       if (segment_size != 0)
-        HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
+        HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSumSingleNode(
           sum + smaller_segment_id * hist_size,
           bin_count + smaller_segment_id * hist_size, grad + segment_start,
           node_size + smaller_segment_id, fvalue + segment_start,
@@ -277,7 +278,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumStatic(
       unsigned segment_start = node_size[i];
       unsigned segment_size = node_size[i + 1] - node_size[i];
       if (segment_size != 0)
-        HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
+        HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSumSingleNode(
           sum + i * hist_size, bin_count + i * hist_size, grad + segment_start,
           node_size + i, fvalue + segment_start, hist_size_bits, segment_size,
           stream);
@@ -285,24 +286,24 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumStatic(
   }
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+void HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSumSingleNode(
   SUM_T *sum, unsigned *bin_count, const GRAD_T *grad,
-  const unsigned *node_size, const unsigned short *fvalue,
-  const unsigned hist_size_bits, const unsigned size, cudaStream_t stream) {
+  const unsigned *node_size, const BIN_T *fvalue, const unsigned hist_size_bits,
+  const unsigned size, cudaStream_t stream) {
   constexpr unsigned blockSize = HIST_SUM_BLOCK_DIM;
   constexpr unsigned items_per_thread = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 96>();
   const unsigned gridSize = (size + (blockSize * items_per_thread) - 1) /
                             (blockSize * items_per_thread);
 
-  hist_sum_node<SUM_T, GRAD_T><<<gridSize, blockSize, 0, stream>>>(
+  hist_sum_node<SUM_T, GRAD_T, BIN_T><<<gridSize, blockSize, 0, stream>>>(
     sum, bin_count, grad, fvalue, hist_size_bits, 0, size);
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumNaive(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+void HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSumNaive(
   SUM_T *sum, unsigned *bin_count, const GRAD_T *grad,
-  const unsigned *node_size, const unsigned short *fvalue,
+  const unsigned *node_size, const BIN_T *fvalue,
   const unsigned hist_size, const unsigned size, cudaStream_t stream) {
   constexpr unsigned blockSize = 1024;
   const unsigned gridSize = (size + blockSize - 1) / blockSize;
@@ -311,12 +312,11 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumNaive(
     sum, bin_count, grad, node_size, fvalue, hist_size, size);
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-template <typename NODE_VALUE_T>
-void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+void HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   const device_vector<unsigned> &partitioning_index,
   const device_vector<NODE_T> &row2Node, const device_vector<GRAD_T> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
+  device_vector<BIN_T> &fvalue_d, BIN_T *fvalue_h,
   const device_vector<SUM_T> &parent_node_sum,
   const device_vector<unsigned int> &parent_node_count,
   const unsigned char fvalue_size, const unsigned level, const unsigned depth,
@@ -332,14 +332,14 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
                      this->hist_size * length * sizeof(unsigned),
                      this->stream));
 
-  unsigned short *fvalue_tmp = NULL;
+  BIN_T *fvalue_tmp = NULL;
 
   if (!fvalue_d.empty()) {
     fvalue_tmp = thrust::raw_pointer_cast(fvalue_d.data());
   } else {
     OK(cudaMemcpyAsync(thrust::raw_pointer_cast(this->fvalue.data()), fvalue_h,
-                       this->size * sizeof(unsigned short),
-                       cudaMemcpyHostToDevice, this->stream));
+                       this->size * sizeof(BIN_T), cudaMemcpyHostToDevice,
+                       this->stream));
     fvalue_tmp = thrust::raw_pointer_cast(this->fvalue.data());
   }
 
@@ -353,8 +353,8 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
     if (fvalue_d.empty()) {
       OK(cudaMemcpyAsync(fvalue_h,
                          thrust::raw_pointer_cast(this->fvalue_dst.data()),
-                         this->size * sizeof(unsigned short),
-                         cudaMemcpyDeviceToHost, this->copy_d2h_stream));
+                         this->size * sizeof(BIN_T), cudaMemcpyDeviceToHost,
+                         this->copy_d2h_stream));
       this->d_fvalue_partitioned =
         thrust::raw_pointer_cast(this->fvalue_dst.data());
     } else {
@@ -369,7 +369,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   if (partition_only) return;
 
   if (level != 0) {
-    HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSum(
+    HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSum(
       thrust::raw_pointer_cast(this->sum.data()),
       thrust::raw_pointer_cast(this->hist_bin_count.data()),
       thrust::raw_pointer_cast(this->features_histogram->grad_hist[fid].data()),
@@ -380,7 +380,7 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
       this->d_fvalue_partitioned, unsigned(fvalue_size), hist_size, length,
       this->features_histogram->CanUseTrick(fid, level), this->stream);
   } else {
-    HistTreeGrower<NODE_T, GRAD_T, SUM_T>::HistSumSingleNode(
+    HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::HistSumSingleNode(
       thrust::raw_pointer_cast(this->sum.data()),
       thrust::raw_pointer_cast(this->hist_bin_count.data()),
       thrust::raw_pointer_cast(grad_d.data()),
@@ -416,8 +416,8 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::ProcessDenseFeature(
     thrust::raw_pointer_cast(this->result_d.data()));
 }
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+void HistTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::FindBest(
   BestSplit<SUM_T> &best, device_vector<NODE_T> &row2Node,
   const device_vector<SUM_T> &parent_node_sum,
   const device_vector<unsigned int> &parent_node_count, unsigned fid,
@@ -426,9 +426,9 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
   int blockSize = 0;
 
   compute1DInvokeConfig(size, &gridSize, &blockSize,
-                        hist_apply_candidates<NODE_T, SUM_T>);
+                        hist_apply_candidates<NODE_T, SUM_T, BIN_T>);
 
-  hist_apply_candidates<NODE_T, SUM_T>
+  hist_apply_candidates<NODE_T, SUM_T, BIN_T>
     <<<gridSize, blockSize, 0, this->stream>>>(
       thrust::raw_pointer_cast(best.gain_feature.data()),
       thrust::raw_pointer_cast(best.sum.data()),
@@ -449,361 +449,42 @@ void HistTreeGrower<NODE_T, GRAD_T, SUM_T>::FindBest(
   }
 }
 
-template class HistTreeGrower<unsigned, float, float>;
+// clang-format off
+/*[[[cog
+import cog
+for t in [('float', 'float'), ('float', 'double'), ('float2', 'float2'), ('float2', 'mydouble2')]:
+    for node_type in ['unsigned int', 'unsigned short', 'unsigned char']:
+        for bin_type in [ 'unsigned short', 'unsigned char']:
+            cog.outl("template class HistTreeGrower<{0}, {3}, {1}, {2}>;".format(
+                node_type, t[0], t[1], bin_type))
 
-template void
-HistTreeGrower<unsigned, float, float>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<float> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned, float, float>::ProcessDenseFeature<unsigned long>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<float> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template class HistTreeGrower<unsigned, float, double>;
-
-template void
-HistTreeGrower<unsigned, float, double>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<double> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned, float, double>::ProcessDenseFeature<unsigned long>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<double> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template class HistTreeGrower<unsigned, float2, float2>;
-
-template void
-HistTreeGrower<unsigned, float2, float2>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float2> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<float2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned, float2, float2>::ProcessDenseFeature<unsigned long>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float2> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<float2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template class HistTreeGrower<unsigned, float2, mydouble2>;
-
-template void
-HistTreeGrower<unsigned, float2, mydouble2>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float2> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<mydouble2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned, float2, mydouble2>::ProcessDenseFeature<unsigned long>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned> &row2Node, const device_vector<float2> &grad_d,
-  device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-  const device_vector<mydouble2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template class HistTreeGrower<unsigned short, float, float>;
-template class HistTreeGrower<unsigned short, float, double>;
-template class HistTreeGrower<unsigned short, float2, float2>;
-template class HistTreeGrower<unsigned short, float2, mydouble2>;
-
-template class HistTreeGrower<unsigned char, float, float>;
-template class HistTreeGrower<unsigned char, float, double>;
-template class HistTreeGrower<unsigned char, float2, float2>;
-template class HistTreeGrower<unsigned char, float2, mydouble2>;
-
-template class HistTreeGrower<unsigned long, float, float>;
-
-template void
-HistTreeGrower<unsigned long, float, float>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned long> &row2Node,
-  const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-  unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned long, float, float>::ProcessDenseFeature<unsigned long>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned long> &row2Node,
-  const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-  unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template class HistTreeGrower<unsigned long, float, double>;
-
-template void
-HistTreeGrower<unsigned long, float, double>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned long> &row2Node,
-  const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-  unsigned short *fvalue_h, const device_vector<double> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void HistTreeGrower<unsigned long, float, double>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long> &row2Node,
-                 const device_vector<float> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<double> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class HistTreeGrower<unsigned long, float2, float2>;
-
-template void
-HistTreeGrower<unsigned long, float2, float2>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned long> &row2Node,
-  const device_vector<float2> &grad_d, device_vector<unsigned short> &fvalue_d,
-  unsigned short *fvalue_h, const device_vector<float2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned long, float2, float2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<float2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class HistTreeGrower<unsigned long, float2, mydouble2>;
-
-template void
-HistTreeGrower<unsigned long, float2, mydouble2>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned long> &row2Node,
-  const device_vector<float2> &grad_d, device_vector<unsigned short> &fvalue_d,
-  unsigned short *fvalue_h, const device_vector<mydouble2> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void
-HistTreeGrower<unsigned long, float2, mydouble2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<mydouble2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template class HistTreeGrower<unsigned long long, float, float>;
-
-template void
-HistTreeGrower<unsigned long long, float, float>::ProcessDenseFeature<unsigned>(
-  const device_vector<unsigned> &partitioning_index,
-  const device_vector<unsigned long long> &row2Node,
-  const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-  unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-  const device_vector<unsigned int> &parent_node_count,
-  const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-  const GainFunctionParameters gain_param, const bool partition_only,
-  const int fid);
-
-template void HistTreeGrower<unsigned long long, float, float>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template void HistTreeGrower<unsigned long long, float, float>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<float> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class HistTreeGrower<unsigned long long, float, double>;
-
-template void
-HistTreeGrower<unsigned long long, float, double>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long long> &row2Node,
-            const device_vector<float> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<double> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void HistTreeGrower<unsigned long long, float, double>::
-  ProcessDenseFeature<unsigned long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<double> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template void HistTreeGrower<unsigned long long, float, double>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float> &grad_d, device_vector<unsigned short> &fvalue_d,
-    unsigned short *fvalue_h, const device_vector<double> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class HistTreeGrower<unsigned long long, float2, float2>;
-
-template void
-HistTreeGrower<unsigned long long, float2, float2>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long long> &row2Node,
-            const device_vector<float2> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<float2> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void
-HistTreeGrower<unsigned long long, float2, float2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<float2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template void HistTreeGrower<unsigned long long, float2, float2>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float2> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<float2> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
-
-template class HistTreeGrower<unsigned long long, float2, mydouble2>;
-
-template void
-HistTreeGrower<unsigned long long, float2, mydouble2>::ProcessDenseFeature<
-  unsigned>(const device_vector<unsigned> &partitioning_index,
-            const device_vector<unsigned long long> &row2Node,
-            const device_vector<float2> &grad_d,
-            device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-            const device_vector<mydouble2> &parent_node_sum,
-            const device_vector<unsigned int> &parent_node_count,
-            const unsigned char fvalue_size, const unsigned level,
-            const unsigned depth, const GainFunctionParameters gain_param,
-            const bool partition_only, const int fid);
-
-template void
-HistTreeGrower<unsigned long long, float2, mydouble2>::ProcessDenseFeature<
-  unsigned long>(const device_vector<unsigned> &partitioning_index,
-                 const device_vector<unsigned long long> &row2Node,
-                 const device_vector<float2> &grad_d,
-                 device_vector<unsigned short> &fvalue_d,
-                 unsigned short *fvalue_h,
-                 const device_vector<mydouble2> &parent_node_sum,
-                 const device_vector<unsigned int> &parent_node_count,
-                 const unsigned char fvalue_size, const unsigned level,
-                 const unsigned depth, const GainFunctionParameters gain_param,
-                 const bool partition_only, const int fid);
-
-template void HistTreeGrower<unsigned long long, float2, mydouble2>::
-  ProcessDenseFeature<unsigned long long>(
-    const device_vector<unsigned> &partitioning_index,
-    const device_vector<unsigned long long> &row2Node,
-    const device_vector<float2> &grad_d,
-    device_vector<unsigned short> &fvalue_d, unsigned short *fvalue_h,
-    const device_vector<mydouble2> &parent_node_sum,
-    const device_vector<unsigned int> &parent_node_count,
-    const unsigned char fvalue_size, const unsigned level, const unsigned depth,
-    const GainFunctionParameters gain_param, const bool partition_only,
-    const int fid);
+]]]*/
+template class HistTreeGrower<unsigned int, unsigned short, float, float>;
+template class HistTreeGrower<unsigned int, unsigned char, float, float>;
+template class HistTreeGrower<unsigned short, unsigned short, float, float>;
+template class HistTreeGrower<unsigned short, unsigned char, float, float>;
+template class HistTreeGrower<unsigned char, unsigned short, float, float>;
+template class HistTreeGrower<unsigned char, unsigned char, float, float>;
+template class HistTreeGrower<unsigned int, unsigned short, float, double>;
+template class HistTreeGrower<unsigned int, unsigned char, float, double>;
+template class HistTreeGrower<unsigned short, unsigned short, float, double>;
+template class HistTreeGrower<unsigned short, unsigned char, float, double>;
+template class HistTreeGrower<unsigned char, unsigned short, float, double>;
+template class HistTreeGrower<unsigned char, unsigned char, float, double>;
+template class HistTreeGrower<unsigned int, unsigned short, float2, float2>;
+template class HistTreeGrower<unsigned int, unsigned char, float2, float2>;
+template class HistTreeGrower<unsigned short, unsigned short, float2, float2>;
+template class HistTreeGrower<unsigned short, unsigned char, float2, float2>;
+template class HistTreeGrower<unsigned char, unsigned short, float2, float2>;
+template class HistTreeGrower<unsigned char, unsigned char, float2, float2>;
+template class HistTreeGrower<unsigned int, unsigned short, float2, mydouble2>;
+template class HistTreeGrower<unsigned int, unsigned char, float2, mydouble2>;
+template class HistTreeGrower<unsigned short, unsigned short, float2, mydouble2>;
+template class HistTreeGrower<unsigned short, unsigned char, float2, mydouble2>;
+template class HistTreeGrower<unsigned char, unsigned short, float2, mydouble2>;
+template class HistTreeGrower<unsigned char, unsigned char, float2, mydouble2>;
+//[[[end]]] (checksum: a79a13b900ad9b058327388aff588e28)
+// clang-format on
 
 }  // namespace core
 }  // namespace arboretum

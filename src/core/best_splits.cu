@@ -80,10 +80,21 @@ void BestSplit<SUM_T>::NextLevel(const unsigned size) {
                parent_node_sum_h.begin() + 1);
 }
 
+/*[[[cog
+import cog
+types = ['float', 'double', 'float2', 'mydouble2']
+cog.outl("// clang-format off")
+for t in types:
+    cog.outl("template class BestSplit<%s>;" % t)
+cog.outl("// clang-format on")
+]]]*/
+// clang-format off
 template class BestSplit<float>;
 template class BestSplit<double>;
 template class BestSplit<float2>;
 template class BestSplit<mydouble2>;
+// clang-format on
+//[[[end]]] (checksum: 874c698aa41ca28337526dd7eaa5d66d)
 
 }  // namespace core
 }  // namespace arboretum

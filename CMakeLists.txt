@@ -79,6 +79,16 @@ FILE(GLOB_RECURSE WRAPPER_SOURCES
     python-wrapper/*.cuh
     )
 
+
+# template instantiation
+FILE(GLOB_RECURSE files src/*.cu)
+add_custom_target(generate
+    COMMAND python -m cogapp -r -c ${files}
+    SOURCES ${files}
+    COMMENT "Generates template instantiation"
+)
+
+
 INCLUDE_DIRECTORIES(src)
 INCLUDE_DIRECTORIES(_cub/)
 INCLUDE_DIRECTORIES(_json/single_include/nlohmann)

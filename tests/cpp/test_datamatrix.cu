@@ -38,7 +38,33 @@ TEST(DataMatrix, HistWideRange) {
   ASSERT_EQ(data.max_feature_size, 4);
   ASSERT_EQ(data.reduced_size[0], 4);
   for (auto i = 0; i < rows; ++i) {
-    ASSERT_EQ(data.data_reduced[0][i], hist_size - (i / 16) - 1);
+    ASSERT_EQ(data.GetHostData<unsigned char>(0)[i], hist_size - (i / 16) - 1);
+  }
+}
+
+TEST(DataMatrix, Hist255) {
+  const int rows = 1024;
+  const int cols = 1;
+  const int category_cols = 0;
+  const int hist_size = 255;
+
+  auto data = DataMatrix(rows, cols, category_cols);
+  for (int i = 0; i < rows * cols; ++i) {
+    data.data[i / rows][i % rows] = float(i);
+  }
+
+  data.InitHist(hist_size, false);
+
+  ASSERT_EQ(data.max_feature_size, 8);
+  ASSERT_EQ(data.reduced_size[0], 8);
+  int add = 0;
+  for (auto i = 0; i < rows; ++i) {
+    if (i == 256) add++;
+    if (i == 513) add++;
+    if (i == 770) add++;
+    if (i == 1023) add++;
+    ASSERT_EQ(data.GetHostData<unsigned char>(0)[i],
+              ((i - add) / (rows / hist_size)));
   }
 }
 
@@ -68,18 +94,18 @@ TEST(DataMatrix, HistSkewedRange) {
   ASSERT_EQ(data.max_feature_size, 3);
   ASSERT_EQ(data.reduced_size[0], 3);
 
-  ASSERT_EQ(data.data_reduced[0][0], 3);
-  ASSERT_EQ(data.data_reduced[0][1], 0);
-  ASSERT_EQ(data.data_reduced[0][2], 3);
-  ASSERT_EQ(data.data_reduced[0][3], 1);
-  ASSERT_EQ(data.data_reduced[0][4], 0);
-  ASSERT_EQ(data.data_reduced[0][5], 1);
-  ASSERT_EQ(data.data_reduced[0][6], 2);
-  ASSERT_EQ(data.data_reduced[0][7], 0);
-  ASSERT_EQ(data.data_reduced[0][8], 0);
-  ASSERT_EQ(data.data_reduced[0][9], 0);
-  ASSERT_EQ(data.data_reduced[0][10], 0);
-  ASSERT_EQ(data.data_reduced[0][11], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[0], 3);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[1], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[2], 3);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[3], 1);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[4], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[5], 1);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[6], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[7], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[8], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[9], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[10], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[11], 0);
 }
 
 TEST(DataMatrix, HistTinyRange1) {
@@ -108,18 +134,18 @@ TEST(DataMatrix, HistTinyRange1) {
   ASSERT_EQ(data.max_feature_size, 2);
   ASSERT_EQ(data.reduced_size[0], 2);
 
-  ASSERT_EQ(data.data_reduced[0][0], 0);
-  ASSERT_EQ(data.data_reduced[0][1], 0);
-  ASSERT_EQ(data.data_reduced[0][2], 0);
-  ASSERT_EQ(data.data_reduced[0][3], 1);
-  ASSERT_EQ(data.data_reduced[0][4], 0);
-  ASSERT_EQ(data.data_reduced[0][5], 2);
-  ASSERT_EQ(data.data_reduced[0][6], 0);
-  ASSERT_EQ(data.data_reduced[0][7], 0);
-  ASSERT_EQ(data.data_reduced[0][8], 0);
-  ASSERT_EQ(data.data_reduced[0][9], 0);
-  ASSERT_EQ(data.data_reduced[0][10], 0);
-  ASSERT_EQ(data.data_reduced[0][11], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[0], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[1], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[2], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[3], 1);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[4], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[5], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[6], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[7], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[8], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[9], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[10], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[11], 0);
 }
 
 TEST(DataMatrix, HistTinyRange2) {
@@ -148,18 +174,18 @@ TEST(DataMatrix, HistTinyRange2) {
   ASSERT_EQ(data.max_feature_size, 2);
   ASSERT_EQ(data.reduced_size[0], 2);
 
-  ASSERT_EQ(data.data_reduced[0][0], 2);
-  ASSERT_EQ(data.data_reduced[0][1], 2);
-  ASSERT_EQ(data.data_reduced[0][2], 2);
-  ASSERT_EQ(data.data_reduced[0][3], 0);
-  ASSERT_EQ(data.data_reduced[0][4], 2);
-  ASSERT_EQ(data.data_reduced[0][5], 1);
-  ASSERT_EQ(data.data_reduced[0][6], 2);
-  ASSERT_EQ(data.data_reduced[0][7], 2);
-  ASSERT_EQ(data.data_reduced[0][8], 2);
-  ASSERT_EQ(data.data_reduced[0][9], 2);
-  ASSERT_EQ(data.data_reduced[0][10], 2);
-  ASSERT_EQ(data.data_reduced[0][11], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[0], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[1], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[2], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[3], 0);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[4], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[5], 1);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[6], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[7], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[8], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[9], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[10], 2);
+  ASSERT_EQ(data.GetHostData<unsigned char>(0)[11], 2);
 
   ASSERT_FLOAT_EQ(data.data_reduced_mapping[0][0], 1.5);
   ASSERT_FLOAT_EQ(data.data_reduced_mapping[0][1], 6.0);

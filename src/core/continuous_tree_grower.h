@@ -6,8 +6,8 @@
 namespace arboretum {
 namespace core {
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-class ContinuousTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+class ContinuousTreeGrower : public BaseGrower<NODE_T, BIN_T, GRAD_T, SUM_T> {
  public:
   ContinuousTreeGrower(const size_t size, const unsigned depth,
                        const unsigned hist_size,
@@ -15,22 +15,19 @@ class ContinuousTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
                        Histogram<SUM_T> *features_histogram = NULL,
                        const InternalConfiguration *config = NULL);
 
-  device_vector<unsigned short> node_fvalue;
-  device_vector<unsigned short> node_fvalue_sorted;
+  device_vector<BIN_T> node_fvalue;
+  device_vector<BIN_T> node_fvalue_sorted;
   device_vector<SUM_T> sum;
   device_vector<unsigned int> run_lenght;
   NODE_T *best_split_h;
 
-  void ApplySplit(NODE_T *row2Node, const unsigned level,
-                  const unsigned threshold, size_t from, size_t to);
+  void ApplySplit(NODE_T *row2Node, const unsigned level, const BIN_T threshold,
+                  size_t from, size_t to);
 
-  // FIXME: Use template parameter instead of unsigned
-  template <typename NODE_VALUE_T>
   void ProcessDenseFeature(const device_vector<unsigned> &partitioning_index,
                            const device_vector<NODE_T> &row2Node,
                            const device_vector<GRAD_T> &grad_d,
-                           device_vector<unsigned short> &fvalue_d,
-                           unsigned short *fvalue_h,
+                           device_vector<BIN_T> &fvalue_d, BIN_T *fvalue_h,
                            const device_vector<SUM_T> &parent_node_sum,
                            const device_vector<unsigned int> &parent_node_count,
                            const unsigned char fvalue_size,

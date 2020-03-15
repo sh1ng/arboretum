@@ -6,8 +6,8 @@
 namespace arboretum {
 namespace core {
 
-template <typename NODE_T, typename GRAD_T, typename SUM_T>
-class HistTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
+template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
+class HistTreeGrower : public BaseGrower<NODE_T, BIN_T, GRAD_T, SUM_T> {
  public:
   HistTreeGrower(const size_t size, const unsigned depth,
                  const unsigned hist_size, const BestSplit<SUM_T> *best,
@@ -17,7 +17,7 @@ class HistTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
   static void HistSum(SUM_T *sum, unsigned *bin_count,
                       const SUM_T *hist_sum_parent,
                       const unsigned *hist_count_parent, const GRAD_T *grad,
-                      const unsigned *node_size, const unsigned short *fvalue,
+                      const unsigned *node_size, const BIN_T *fvalue,
                       const unsigned hist_size_bits, const unsigned hist_size,
                       const unsigned size, const bool use_trick,
                       cudaStream_t stream = 0);
@@ -26,29 +26,25 @@ class HistTreeGrower : public BaseGrower<NODE_T, GRAD_T, SUM_T> {
                             const SUM_T *hist_sum_parent,
                             const unsigned *hist_count_parent,
                             const GRAD_T *grad, const unsigned *node_size,
-                            const unsigned short *fvalue,
-                            const unsigned hist_size_bits,
+                            const BIN_T *fvalue, const unsigned hist_size_bits,
                             const unsigned hist_size, const unsigned size,
                             const bool use_trick, cudaStream_t stream = 0);
 
   static void HistSumSingleNode(SUM_T *sum, unsigned *bin_count,
                                 const GRAD_T *grad, const unsigned *node_size,
-                                const unsigned short *fvalue,
+                                const BIN_T *fvalue,
                                 const unsigned hist_size_bits,
                                 const unsigned size, cudaStream_t stream = 0);
 
   static void HistSumNaive(SUM_T *sum, unsigned *bin_count, const GRAD_T *grad,
-                           const unsigned *node_size,
-                           const unsigned short *fvalue,
+                           const unsigned *node_size, const BIN_T *fvalue,
                            const unsigned hist_size, const unsigned size,
                            cudaStream_t stream = 0);
 
-  template <typename NODE_VALUE_T>
   void ProcessDenseFeature(const device_vector<unsigned> &partitioning_index,
                            const device_vector<NODE_T> &row2Node,
                            const device_vector<GRAD_T> &grad_d,
-                           device_vector<unsigned short> &fvalue_d,
-                           unsigned short *fvalue_h,
+                           device_vector<BIN_T> &fvalue_d, BIN_T *fvalue_h,
                            const device_vector<SUM_T> &parent_node_sum,
                            const device_vector<unsigned int> &parent_node_count,
                            const unsigned char fvalue_size,

@@ -32,29 +32,41 @@ __global__ void update_multi_node(
   }
 }
 
+/*[[[cog
+import cog
+sum_types = ['float', 'double', 'float2', 'mydouble2']
+cog.outl("// clang-format off")
+for t in sum_types:
+    cog.outl("""template __global__ void update_multi_node<{0}>(
+  {0} *sum_dst, unsigned *count_dst, const {0} *hist_sum_parent,
+  const unsigned *hist_count_parent_count, const {0} *sum_src,
+  const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
+  const unsigned hist_size, const unsigned n);""".format(t))
+cog.outl("// clang-format on")
+]]]*/
+// clang-format off
 template __global__ void update_multi_node<float>(
   float *sum_dst, unsigned *count_dst, const float *hist_sum_parent,
   const unsigned *hist_count_parent_count, const float *sum_src,
   const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
   const unsigned hist_size, const unsigned n);
-
 template __global__ void update_multi_node<double>(
   double *sum_dst, unsigned *count_dst, const double *hist_sum_parent,
   const unsigned *hist_count_parent_count, const double *sum_src,
   const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
   const unsigned hist_size, const unsigned n);
-
 template __global__ void update_multi_node<float2>(
   float2 *sum_dst, unsigned *count_dst, const float2 *hist_sum_parent,
   const unsigned *hist_count_parent_count, const float2 *sum_src,
   const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
   const unsigned hist_size, const unsigned n);
-
 template __global__ void update_multi_node<mydouble2>(
   mydouble2 *sum_dst, unsigned *count_dst, const mydouble2 *hist_sum_parent,
   const unsigned *hist_count_parent_count, const mydouble2 *sum_src,
   const unsigned *count_src, const unsigned *__restrict__ parent_count_iter,
   const unsigned hist_size, const unsigned n);
+// clang-format on
+//[[[end]]] (checksum: 885ef776f06fb9f79c9d2ee3dd93ff40)
 
 template <typename SUM_T>
 __global__ void update(SUM_T *sum_dst, unsigned *count_dst,
@@ -68,54 +80,55 @@ __global__ void update(SUM_T *sum_dst, unsigned *count_dst,
   }
 }
 
-template __global__ void update<float>(float *sum_dst, unsigned *count_dst,
-                                       const float *parent_sum,
-                                       const unsigned *parent_count,
-                                       const float *sum_src,
-                                       const unsigned *count_src,
-                                       const unsigned n);
+/*[[[cog
+import cog
+sum_types = ['float', 'double', 'float2', 'mydouble2']
+cog.outl("// clang-format off")
+for t in sum_types:
+    cog.outl("""template __global__ void update<{0}>({0} *sum_dst, unsigned
+*count_dst, const {0} *parent_sum, const unsigned *parent_count, const {0}
+*sum_src, const unsigned *count_src, const unsigned n);""".format(t))
+cog.outl("// clang-format on")
+]]]*/
+// clang-format off
+template __global__ void update<float>(float *sum_dst, unsigned
+*count_dst, const float *parent_sum, const unsigned *parent_count, const float
+*sum_src, const unsigned *count_src, const unsigned n);
+template __global__ void update<double>(double *sum_dst, unsigned
+*count_dst, const double *parent_sum, const unsigned *parent_count, const double
+*sum_src, const unsigned *count_src, const unsigned n);
+template __global__ void update<float2>(float2 *sum_dst, unsigned
+*count_dst, const float2 *parent_sum, const unsigned *parent_count, const float2
+*sum_src, const unsigned *count_src, const unsigned n);
+template __global__ void update<mydouble2>(mydouble2 *sum_dst, unsigned
+*count_dst, const mydouble2 *parent_sum, const unsigned *parent_count, const mydouble2
+*sum_src, const unsigned *count_src, const unsigned n);
+// clang-format on
+//[[[end]]] (checksum: 3a2af9afc26c66fcda0fa6541b4a2370)
 
-template __global__ void update<double>(double *sum_dst, unsigned *count_dst,
-                                        const double *parent_sum,
-                                        const unsigned *parent_count,
-                                        const double *sum_src,
-                                        const unsigned *count_src,
-                                        const unsigned n);
-
-template __global__ void update<float2>(float2 *sum_dst, unsigned *count_dst,
-                                        const float2 *parent_sum,
-                                        const unsigned *parent_count,
-                                        const float2 *sum_src,
-                                        const unsigned *count_src,
-                                        const unsigned n);
-
-template __global__ void update<mydouble2>(
-  mydouble2 *sum_dst, unsigned *count_dst, const mydouble2 *parent_sum,
-  const unsigned *parent_count, const mydouble2 *sum_src,
-  const unsigned *count_src, const unsigned n);
-
-template <typename SUM_T, typename GRAD_T, int ITEMS_PER_THREAD>
+template <typename SUM_T, typename GRAD_T, typename BIN_TYPE,
+          int ITEMS_PER_THREAD>
 __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
                               const GRAD_T *__restrict__ values,
-                              const unsigned short *__restrict__ bin,
+                              const BIN_TYPE *__restrict__ bin,
                               const unsigned end_bit, const unsigned segment,
                               const size_t n) {
+  constexpr BIN_TYPE NO_DATA = BIN_TYPE(-1);
   const int warp_id = threadIdx.x / 32;
   const int lane = threadIdx.x % 32;
-  typedef cub::BlockRadixSort<unsigned short, HIST_SUM_BLOCK_DIM,
-                              ITEMS_PER_THREAD, GRAD_T, 4, false,
-                              cub ::BLOCK_SCAN_RAKING>
+  typedef cub::BlockRadixSort<BIN_TYPE, HIST_SUM_BLOCK_DIM, ITEMS_PER_THREAD,
+                              GRAD_T, 4, false, cub ::BLOCK_SCAN_RAKING>
     BlockRadixSort;
 
   typedef cub::WarpScan<
-    cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>>
+    cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>>>
     WarpSum;
 
   __shared__ typename WarpSum::TempStorage temp_scan[HIST_SUM_BLOCK_DIM / 32];
   __shared__ typename BlockRadixSort::TempStorage temp_sort;
 
   // Obtain a segment of consecutive items that are blocked across threads
-  unsigned short thread_keys[ITEMS_PER_THREAD];
+  BIN_TYPE thread_keys[ITEMS_PER_THREAD];
   GRAD_T thread_values[ITEMS_PER_THREAD];
 
 #pragma unroll
@@ -126,7 +139,7 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
       thread_keys[i] = bin[idx];
       thread_values[i] = values[idx];
     } else {
-      thread_keys[i] = HIST_SUM_NO_DATA;
+      thread_keys[i] = NO_DATA;
     }
   }
 
@@ -153,31 +166,30 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
   init(zero);
 
   struct SegmentSum {
-    __device__ __forceinline__ cub::KeyValuePair<
-      unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
-    operator()(
-      const cub::KeyValuePair<unsigned short,
-                              cub::KeyValuePair<unsigned short, SUM_T>> &a,
-      const cub::KeyValuePair<
-        unsigned short, cub::KeyValuePair<unsigned short, SUM_T>> &b) const {
+    __device__ __forceinline__
+      cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>>
+      operator()(
+        const cub::KeyValuePair<BIN_TYPE,
+                                cub::KeyValuePair<unsigned short, SUM_T>> &a,
+        const cub::KeyValuePair<
+          BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> &b) const {
       if (b.key > a.key) return b;
       cub::KeyValuePair<unsigned short, SUM_T> sum(
         a.value.key + b.value.key, a.value.value + b.value.value);
-      cub::KeyValuePair<unsigned short,
-                        cub::KeyValuePair<unsigned short, SUM_T>>
-        v(a.key, sum);
+      cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> v(
+        a.key, sum);
       return v;
     }
   };
 
   cub::KeyValuePair<unsigned short, SUM_T> initial_sum(count_current,
                                                        sum_current);
-  cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
-    initial(thread_keys[ITEMS_PER_THREAD - 1], initial_sum);
+  cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> initial(
+    thread_keys[ITEMS_PER_THREAD - 1], initial_sum);
 
   cub::KeyValuePair<unsigned short, SUM_T> zero_sum_(0, zero);
-  cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
-    zero_(0, zero_sum_);
+  cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> zero_(
+    0, zero_sum_);
 
   WarpSum(temp_scan[warp_id])
     .ExclusiveScan(initial, initial, zero_, SegmentSum());
@@ -188,7 +200,7 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     atomicAdd(&dst_count[initial.key], initial.value.key);
   }
   //   last thread also need to handle it's own sum
-  if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != HIST_SUM_NO_DATA) {
+  if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != NO_DATA) {
     // flush all collected data
     if (thread_keys[ITEMS_PER_THREAD - 1] == initial.key) {
       atomicAdd(&dst_sum[thread_keys[ITEMS_PER_THREAD - 1]],
@@ -201,34 +213,61 @@ __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
     }
   }
 }
-
-template __global__ void hist_sum_node<float, float>(
+// clang-format off
+/*[[[cog
+import cog
+for t in [('float', 'float'), ('float', 'double'), ('float2', 'float2'), ('float2', 'mydouble2')]:
+    for bin_type in ['unsigned short', 'unsigned char']:
+        cog.outl("""template __global__ void hist_sum_node<{0}, {1}, {2}>(
+  {0} *dst_sum, unsigned *dst_count, const {1} *__restrict__ values,
+  const {2} *__restrict__ bin, const unsigned end_bit,
+  const unsigned segment, const size_t n);""".format(
+      t[1], t[0], bin_type))
+]]]*/
+template __global__ void hist_sum_node<float, float, unsigned short>(
   float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
-
-template __global__ void hist_sum_node<double, float>(
+template __global__ void hist_sum_node<float, float, unsigned char>(
+  float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
+  const unsigned char *__restrict__ bin, const unsigned end_bit,
+  const unsigned segment, const size_t n);
+template __global__ void hist_sum_node<double, float, unsigned short>(
   double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
-
-template __global__ void hist_sum_node<float2, float2>(
+template __global__ void hist_sum_node<double, float, unsigned char>(
+  double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
+  const unsigned char *__restrict__ bin, const unsigned end_bit,
+  const unsigned segment, const size_t n);
+template __global__ void hist_sum_node<float2, float2, unsigned short>(
   float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
-
-template __global__ void hist_sum_node<mydouble2, float2>(
+template __global__ void hist_sum_node<float2, float2, unsigned char>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
+  const unsigned char *__restrict__ bin, const unsigned end_bit,
+  const unsigned segment, const size_t n);
+template __global__ void hist_sum_node<mydouble2, float2, unsigned short>(
   mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned short *__restrict__ bin, const unsigned end_bit,
   const unsigned segment, const size_t n);
+template __global__ void hist_sum_node<mydouble2, float2, unsigned char>(
+  mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
+  const unsigned char *__restrict__ bin, const unsigned end_bit,
+  const unsigned segment, const size_t n);
+//[[[end]]] (checksum: 6858952bec46e367f32f00e13445c7b9)
+// clang-format on
 
-template <typename SUM_T, typename GRAD_T, bool USE_TRICK, int ITEMS_PER_THREAD>
+template <typename SUM_T, typename GRAD_T, typename BIN_TYPE, bool USE_TRICK,
+          int ITEMS_PER_THREAD>
 __global__ void hist_sum_multi_node(
   SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const BIN_TYPE *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node) {
+  constexpr BIN_TYPE NO_DATA = BIN_TYPE(-1);
   const int warp_id = threadIdx.x / 32;
   const int lane = threadIdx.x % 32;
   const int blocks_per_node_size = (1 << blocks_per_node);
@@ -254,20 +293,19 @@ __global__ void hist_sum_multi_node(
     node_size = parent_count_iter[node_id + 1] - node_start;
   }
 
-  typedef cub::BlockRadixSort<unsigned short, HIST_SUM_BLOCK_DIM,
-                              ITEMS_PER_THREAD, GRAD_T, 4, false,
-                              cub ::BLOCK_SCAN_RAKING>
+  typedef cub::BlockRadixSort<BIN_TYPE, HIST_SUM_BLOCK_DIM, ITEMS_PER_THREAD,
+                              GRAD_T, 4, false, cub ::BLOCK_SCAN_RAKING>
     BlockRadixSort;
 
   typedef cub::WarpScan<
-    cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>>
+    cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>>>
     WarpSum;
 
   __shared__ typename WarpSum::TempStorage temp_scan[HIST_SUM_BLOCK_DIM / 32];
   __shared__ typename BlockRadixSort::TempStorage temp_sort;
 
   // Obtain a segment of consecutive items that are blocked across threads
-  unsigned short thread_keys[ITEMS_PER_THREAD];
+  BIN_TYPE thread_keys[ITEMS_PER_THREAD];
   GRAD_T thread_values[ITEMS_PER_THREAD];
 
   for (int block_offset =
@@ -282,7 +320,7 @@ __global__ void hist_sum_multi_node(
         thread_keys[i] = bin[idx + node_start];
         thread_values[i] = values[idx + node_start];
       } else {
-        thread_keys[i] = HIST_SUM_NO_DATA;
+        thread_keys[i] = NO_DATA;
       }
     }
 
@@ -310,31 +348,30 @@ __global__ void hist_sum_multi_node(
     init(zero);
 
     struct SegmentSum {
-      __device__ __forceinline__ cub::KeyValuePair<
-        unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
-      operator()(
-        const cub::KeyValuePair<unsigned short,
-                                cub::KeyValuePair<unsigned short, SUM_T>> &a,
-        const cub::KeyValuePair<
-          unsigned short, cub::KeyValuePair<unsigned short, SUM_T>> &b) const {
+      __device__ __forceinline__
+        cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>>
+        operator()(
+          const cub::KeyValuePair<BIN_TYPE,
+                                  cub::KeyValuePair<unsigned short, SUM_T>> &a,
+          const cub::KeyValuePair<
+            BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> &b) const {
         if (b.key > a.key) return b;
         cub::KeyValuePair<unsigned short, SUM_T> sum(
           a.value.key + b.value.key, a.value.value + b.value.value);
-        cub::KeyValuePair<unsigned short,
-                          cub::KeyValuePair<unsigned short, SUM_T>>
-          v(a.key, sum);
+        cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> v(
+          a.key, sum);
         return v;
       }
     };
 
     cub::KeyValuePair<unsigned short, SUM_T> initial_sum(count_current,
                                                          sum_current);
-    cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
+    cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>>
       initial(thread_keys[ITEMS_PER_THREAD - 1], initial_sum);
 
     cub::KeyValuePair<unsigned short, SUM_T> zero_sum_(0, zero);
-    cub::KeyValuePair<unsigned short, cub::KeyValuePair<unsigned short, SUM_T>>
-      zero_(0, zero_sum_);
+    cub::KeyValuePair<BIN_TYPE, cub::KeyValuePair<unsigned short, SUM_T>> zero_(
+      0, zero_sum_);
 
     WarpSum(temp_scan[warp_id])
       .ExclusiveScan(initial, initial, zero_, SegmentSum());
@@ -347,7 +384,7 @@ __global__ void hist_sum_multi_node(
                 initial.value.key);
     }
     // last thread also need to handle it's own sum
-    if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != HIST_SUM_NO_DATA) {
+    if (lane == 31 && thread_keys[ITEMS_PER_THREAD - 1] != NO_DATA) {
       // flush all collected data
       if (thread_keys[ITEMS_PER_THREAD - 1] == initial.key) {
         atomicAdd(
@@ -368,68 +405,149 @@ __global__ void hist_sum_multi_node(
   }
 }
 
-template __global__ void hist_sum_multi_node<float, float, false>(
+// clang-format off
+/*[[[cog
+import cog
+for t in [('float', 'float'), ('float', 'double'), ('float2', 'float2'), ('float2', 'mydouble2')]:
+    for bin_type in ['unsigned short', 'unsigned char']:
+        cog.outl("""template __global__ void
+hist_sum_multi_node<{0}, {1}, {2}, false>(
+  {0} *dst_sum, unsigned *dst_count, const {0} *hist_sum_parent,
+  const unsigned *hist_count_parent, const {1} *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const {2} *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);""".format(
+      t[1], t[0], bin_type))
+        cog.outl("""template __global__ void
+hist_sum_multi_node<{0}, {1}, {2}, true>(
+  {0} *dst_sum, unsigned *dst_count, const {0} *hist_sum_parent,
+  const unsigned *hist_count_parent, const {1} *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const {2} *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);""".format(
+      t[1], t[0], bin_type))
+]]]*/
+template __global__ void
+hist_sum_multi_node<float, float, unsigned short, false>(
   float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<float2, float2, false>(
-  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
-  const unsigned *hist_count_parent, const float2 *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<double, float, false>(
-  double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
-  const unsigned *hist_count_parent, const float *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<mydouble2, float2, false>(
-  mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
-  const unsigned *hist_count_parent, const float2 *__restrict__ values,
-  const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
-  const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<float, float, true>(
+template __global__ void
+hist_sum_multi_node<float, float, unsigned short, true>(
   float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<float2, float2, true>(
-  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
-  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+template __global__ void
+hist_sum_multi_node<float, float, unsigned char, false>(
+  float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
+  const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<double, float, true>(
+template __global__ void
+hist_sum_multi_node<float, float, unsigned char, true>(
+  float *dst_sum, unsigned *dst_count, const float *hist_sum_parent,
+  const unsigned *hist_count_parent, const float *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<double, float, unsigned short, false>(
   double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
   const unsigned *hist_count_parent, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node);
-
-template __global__ void hist_sum_multi_node<mydouble2, float2, true>(
+template __global__ void
+hist_sum_multi_node<double, float, unsigned short, true>(
+  double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
+  const unsigned *hist_count_parent, const float *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<double, float, unsigned char, false>(
+  double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
+  const unsigned *hist_count_parent, const float *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<double, float, unsigned char, true>(
+  double *dst_sum, unsigned *dst_count, const double *hist_sum_parent,
+  const unsigned *hist_count_parent, const float *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<float2, float2, unsigned short, false>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<float2, float2, unsigned short, true>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<float2, float2, unsigned char, false>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<float2, float2, unsigned char, true>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<mydouble2, float2, unsigned short, false>(
   mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
   const unsigned *hist_count_parent, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<mydouble2, float2, unsigned short, true>(
+  mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<mydouble2, float2, unsigned char, false>(
+  mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+template __global__ void
+hist_sum_multi_node<mydouble2, float2, unsigned char, true>(
+  mydouble2 *dst_sum, unsigned *dst_count, const mydouble2 *hist_sum_parent,
+  const unsigned *hist_count_parent, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned hist_size,
+  const unsigned end_bit, const int blocks_per_node);
+//[[[end]]] (checksum: 25c0c64a105cac1fa2bd85171d8543e1)
+// clang-format on
 
-template <typename SUM_T, typename GRAD_T>
+template <typename SUM_T, typename GRAD_T, typename BIN_T>
 __global__ void hist_sum(SUM_T *dst_sum, unsigned *dst_count,
                          const GRAD_T *__restrict__ values,
                          const unsigned *__restrict__ parent_count_iter,
-                         const unsigned short *__restrict__ bin,
-                         const unsigned bins, const size_t n) {
+                         const BIN_T *__restrict__ bin, const unsigned bins,
+                         const size_t n) {
   for (unsigned int i = blockDim.x * blockIdx.x + threadIdx.x; i < n;
        i += gridDim.x * blockDim.x) {
     // TODO: Binary search?
@@ -445,22 +563,48 @@ __global__ void hist_sum(SUM_T *dst_sum, unsigned *dst_count,
   }
 }
 
-template __global__ void hist_sum<float, float>(
+// clang-format off
+/*[[[cog
+import cog
+for t in [('float', 'float'), ('float', 'double'), ('float2', 'float2'), ('float2', 'mydouble2')]:
+    for bin_type in ['unsigned short', 'unsigned char']:
+        cog.outl("""template __global__ void hist_sum<{0}, {1}, {2}>(
+  {0} *dst_sum, unsigned *dst_count, const {1} *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const {2} *__restrict__ bin, const unsigned bins, const size_t n);""".format(
+      t[1], t[0], bin_type))
+]]]*/
+template __global__ void hist_sum<float, float, unsigned short>(
   float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
-
-template __global__ void hist_sum<float2, float2>(
-  float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
+template __global__ void hist_sum<float, float, unsigned char>(
+  float *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
-
-template __global__ void hist_sum<double, float>(
+  const unsigned char *__restrict__ bin, const unsigned bins, const size_t n);
+template __global__ void hist_sum<double, float, unsigned short>(
   double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
-
-template __global__ void hist_sum<mydouble2, float2>(
+template __global__ void hist_sum<double, float, unsigned char>(
+  double *dst_sum, unsigned *dst_count, const float *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned bins, const size_t n);
+template __global__ void hist_sum<float2, float2, unsigned short>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
+template __global__ void hist_sum<float2, float2, unsigned char>(
+  float2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned bins, const size_t n);
+template __global__ void hist_sum<mydouble2, float2, unsigned short>(
   mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
   const unsigned short *__restrict__ bin, const unsigned bins, const size_t n);
+template __global__ void hist_sum<mydouble2, float2, unsigned char>(
+  mydouble2 *dst_sum, unsigned *dst_count, const float2 *__restrict__ values,
+  const unsigned *__restrict__ parent_count_iter,
+  const unsigned char *__restrict__ bin, const unsigned bins, const size_t n);
+//[[[end]]] (checksum: ccde6b65791a97b2a0a90e1c9694abda)
+// clang-format on

@@ -3,7 +3,6 @@
 
 #include "cuda_runtime.h"
 
-#define HIST_SUM_NO_DATA (unsigned short)-1
 #define HIST_SUM_BLOCK_DIM 128
 
 template <typename T, int BYTES_PER_THREAD>
@@ -11,27 +10,27 @@ constexpr int ITEMS_PER_THREAD_FOR_TYPE() {
   return BYTES_PER_THREAD / sizeof(T);
 }
 
-template <typename SUM_T, typename GRAD_T, bool USE_TRICK,
+template <typename SUM_T, typename GRAD_T, typename BIN_TYPE, bool USE_TRICK,
           int ITEMS_PER_THREAD = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 88>()>
 __global__ void hist_sum_multi_node(
   SUM_T *dst_sum, unsigned *dst_count, const SUM_T *hist_sum_parent,
   const unsigned *hist_count_parent, const GRAD_T *__restrict__ values,
   const unsigned *__restrict__ parent_count_iter,
-  const unsigned short *__restrict__ bin, const unsigned hist_size,
+  const BIN_TYPE *__restrict__ bin, const unsigned hist_size,
   const unsigned end_bit, const int blocks_per_node);
 
-template <typename SUM_T, typename GRAD_T>
+template <typename SUM_T, typename GRAD_T, typename BIN_T>
 __global__ void hist_sum(SUM_T *dst_sum, unsigned *dst_count,
                          const GRAD_T *__restrict__ values,
                          const unsigned *__restrict__ parent_count_iter,
-                         const unsigned short *__restrict__ bin,
-                         const unsigned end_bit, const size_t n);
+                         const BIN_T *__restrict__ bin, const unsigned end_bit,
+                         const size_t n);
 
-template <typename SUM_T, typename GRAD_T,
+template <typename SUM_T, typename GRAD_T, typename BIN_TYPE,
           int ITEMS_PER_THREAD = ITEMS_PER_THREAD_FOR_TYPE<GRAD_T, 96>()>
 __global__ void hist_sum_node(SUM_T *dst_sum, unsigned *dst_count,
                               const GRAD_T *__restrict__ values,
-                              const unsigned short *__restrict__ bin,
+                              const BIN_TYPE *__restrict__ bin,
                               const unsigned end_bit, const unsigned segment,
                               const size_t n);
 

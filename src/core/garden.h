@@ -91,27 +91,29 @@ struct RegTree : public DecisionTree {
 
   void PredictByQuantized(const arboretum::io::DataMatrix *data,
                           thrust::host_vector<float> &out) const {
-#pragma omp parallel for
-    for (size_t i = 0; i < data->rows; ++i) {
-      unsigned int node_id = 0;
-      // todo: check
-      Node current_node = nodes[node_id];
-      for (size_t j = 1, len = depth; j < len; ++j) {
-        current_node = nodes[node_id];
-        bool isLeft =
-          current_node.fid < data->columns_dense &&
-          data->data_reduced[current_node.fid][i] < current_node.quantized;
-        // FIXME: support category
-        //    ||
-        //   (current_node.fid >= data->columns_dense &&
-        //    data->data_categories[current_node.fid - data->columns_dense][i]
-        //    ==
-        //      current_node.category);
+    // #pragma omp parallel for
+    //     for (size_t i = 0; i < data->rows; ++i) {
+    //       unsigned int node_id = 0;
+    //       // todo: check
+    //       Node current_node = nodes[node_id];
+    //       for (size_t j = 1, len = depth; j < len; ++j) {
+    //         current_node = nodes[node_id];
+    //         bool isLeft =
+    //           current_node.fid < data->columns_dense &&
+    //           data->data_reduced[current_node.fid][i] <
+    //           current_node.quantized;
+    //         // FIXME: support category
+    //         //    ||
+    //         //   (current_node.fid >= data->columns_dense &&
+    //         //    data->data_categories[current_node.fid -
+    //         data->columns_dense][i]
+    //         //    ==
+    //         //      current_node.category);
 
-        node_id = ChildNode(node_id, isLeft);
-      }
-      out[i + label * data->rows] += weights[node_id - offset];
-    }
+    //         node_id = ChildNode(node_id, isLeft);
+    //       }
+    //       out[i + label * data->rows] += weights[node_id - offset];
+    //     }
   }
 
   void Predict(const arboretum::io::DataMatrix *data,

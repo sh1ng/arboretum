@@ -16,8 +16,8 @@ using namespace std;
 
 #define ITEMS 8
 
-template <int ITEMS_PER_THREAD>
-__global__ void build_histogram(unsigned short *bin, float *threshold,
+template <typename T, int ITEMS_PER_THREAD>
+__global__ void build_histogram(T *bin, float *threshold,
                                 const float *fvalue_unique, const float *fvalue,
                                 const int hist_size, const int unique_size,
                                 const size_t n) {
@@ -51,12 +51,13 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
   _init = false;
   data.resize(columns);
   data_category_device.resize(columns_category);
-  sorted_data_device.resize(columns);
-  data_reduced.resize(
-    columns,
-    thrust::host_vector<
-      unsigned short,
-      thrust::cuda::experimental::pinned_allocator<unsigned short>>(rows));
+  data_reduced_u8.resize(columns);
+  data_reduced_u16.resize(columns);
+  data_reduced_u32.resize(columns);
+  data_reduced_u8_device.resize(columns);
+  data_reduced_u16_device.resize(columns);
+  data_reduced_u32_device.resize(columns);
+
   reduced_size.resize(columns);
   category_size.resize(columns_category);
   data_reduced_mapping.resize(columns);
@@ -71,11 +72,19 @@ DataMatrix::DataMatrix(int rows, int columns, int columns_category)
 }
 
 void DataMatrix::InitHist(int hist_size, bool verbose) {
+  if (hist_size < (1 << 8))
+    this->InitHistInternal<unsigned char>(hist_size, verbose);
+  else
+    this->InitHistInternal<unsigned short>(hist_size, verbose);
+}
+
+template <typename T>
+void DataMatrix::InitHistInternal(int hist_size, bool verbose) {
   if (!_init) {
     thrust::host_vector<thrust::host_vector<float>> thresholds(columns_dense);
     thrust::device_vector<float> d_data(rows);
     thrust::device_vector<float> d_data_sorted(rows);
-    thrust::device_vector<unsigned short> bin(rows);
+    thrust::device_vector<T> bin(rows);
     thrust::device_vector<float> d_threshold(hist_size);
 
     void *d_temp_storage = NULL;
@@ -103,7 +112,7 @@ void DataMatrix::InitHist(int hist_size, bool verbose) {
       reduced_size[i] = 32 - __builtin_clz(size);
       data_reduced_mapping[i].resize(size);
       int grid_size = (rows + 1024 * ITEMS - 1) / (1024 * ITEMS);
-      build_histogram<ITEMS><<<grid_size, 1024, hist_size * sizeof(float)>>>(
+      build_histogram<T, ITEMS><<<grid_size, 1024, hist_size * sizeof(float)>>>(
         thrust::raw_pointer_cast(bin.data()),
         thrust::raw_pointer_cast(d_threshold.data()),
         thrust::raw_pointer_cast(d_data_sorted.data()),
@@ -114,9 +123,8 @@ void DataMatrix::InitHist(int hist_size, bool verbose) {
       thrust::copy(d_threshold.begin(), d_threshold.begin() + size,
                    data_reduced_mapping[i].begin());
 
-      //   data_reduced[i].resize(rows);
-
-      thrust::copy(bin.begin(), bin.end(), data_reduced[i].begin());
+      GetHostData<T>(i).resize(rows);
+      thrust::copy(bin.begin(), bin.end(), GetHostData<T>(i).begin());
     }
 
     OK(cudaFree(d_temp_storage));
@@ -134,9 +142,10 @@ void DataMatrix::InitHist(int hist_size, bool verbose) {
 
 void DataMatrix::InitExact(bool verbose) {
   if (!_init) {
+    data_reduced_u32.resize(columns);
 #pragma omp parallel for
     for (size_t i = 0; i < columns_dense; ++i) {
-      data_reduced[i].resize(rows);
+      data_reduced_u32[i].resize(rows);
 
       std::unordered_set<float> s;
       for (float v : data[i]) s.insert(v);
@@ -149,7 +158,7 @@ void DataMatrix::InitExact(bool verbose) {
           std::lower_bound(data_reduced_mapping[i].begin(),
                            data_reduced_mapping[i].end(), data[i][j]);
         unsigned int idx = indx - data_reduced_mapping[i].begin();
-        data_reduced[i][j] = idx;
+        data_reduced_u32[i][j] = idx;
       }
     }
 
@@ -179,35 +188,84 @@ void DataMatrix::InitExact(bool verbose) {
 }
 
 void DataMatrix::UpdateGrad() {}
+
 void DataMatrix::TransferToGPU(size_t free, bool verbose) {
-  size_t data_size = sizeof(unsigned short) * rows;
+  if (this->max_feature_size <= sizeof(unsigned char) * CHAR_BIT) {
+    this->TransferToGPUInternal<unsigned char>(free, verbose);
+  } else if (this->max_feature_size <= sizeof(unsigned short) * CHAR_BIT) {
+    this->TransferToGPUInternal<unsigned short>(free, verbose);
+  } else {
+    this->TransferToGPUInternal<unsigned int>(free, verbose);
+  }
+}
+
+template <typename T>
+void DataMatrix::TransferToGPUInternal(size_t free, bool verbose) {
+  size_t data_size = sizeof(T) * rows;
   size_t copy_count = std::min(free / data_size, columns_dense);
   for (size_t i = 0; i < copy_count; ++i) {
-    sorted_data_device[i].resize(rows);
-    thrust::copy(data_reduced[i].begin(), data_reduced[i].end(),
-                 sorted_data_device[i].begin());
+    this->GetDeviceData<T>(i).resize(rows);
+    thrust::copy(this->GetHostData<T>(i).begin(), this->GetHostData<T>(i).end(),
+                 this->GetDeviceData<T>(i).begin());
   }
   if (verbose)
     printf("copied features data %ld from %ld \n", copy_count, columns_dense);
 
-  free -= copy_count * data_size;
+  //   free -= copy_count * data_size;
 
-  copy_count = 0;
+  //   copy_count = 0;
 
-  for (size_t i = 0; i < columns_category; ++i) {
-    if (rows * sizeof(unsigned int) < free) {
-      copy_count++;
-      data_category_device[i].resize(rows);
-      thrust::copy(data_categories[i].begin(), data_categories[i].end(),
-                   data_category_device[i].begin());
-      free -= rows * sizeof(unsigned int);
-    } else {
-      break;
-    }
-  }
-  if (verbose)
-    printf("copied category features %ld from %ld \n", copy_count,
-           columns_category);
+  //   for (size_t i = 0; i < columns_category; ++i) {
+  //     if (rows * sizeof(unsigned int) < free) {
+  //       copy_count++;
+  //       data_category_device[i].resize(rows);
+  //       thrust::copy(data_categories[i].begin(), data_categories[i].end(),
+  //                    data_category_device[i].begin());
+  //       free -= rows * sizeof(unsigned int);
+  //     } else {
+  //       break;
+  //     }
+  //   }
+  //   if (verbose)
+  //     printf("copied category features %ld from %ld \n", copy_count,
+  //            columns_category);
 }
+
+template <>
+thrust::host_vector<unsigned int,
+                    thrust::cuda::experimental::pinned_allocator<unsigned int>>
+  &DataMatrix::GetHostData(int column) {
+  return data_reduced_u32[column];
+}
+
+template <>
+thrust::host_vector<
+  unsigned short, thrust::cuda::experimental::pinned_allocator<unsigned short>>
+  &DataMatrix::GetHostData(int column) {
+  return data_reduced_u16[column];
+}
+
+template <>
+thrust::host_vector<unsigned char,
+                    thrust::cuda::experimental::pinned_allocator<unsigned char>>
+  &DataMatrix::GetHostData(int column) {
+  return data_reduced_u8[column];
+}
+
+template <>
+thrust::device_vector<unsigned int> &DataMatrix::GetDeviceData(int column) {
+  return data_reduced_u32_device[column];
+}
+
+template <>
+thrust::device_vector<unsigned short> &DataMatrix::GetDeviceData(int column) {
+  return data_reduced_u16_device[column];
+}
+
+template <>
+thrust::device_vector<unsigned char> &DataMatrix::GetDeviceData(int column) {
+  return data_reduced_u8_device[column];
+}
+
 }  // namespace io
 }  // namespace arboretum

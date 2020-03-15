@@ -8,7 +8,7 @@
 
 namespace arboretum_test {
 
-TEST(SingleNodeHistSumFloat, Naive) {
+TEST(SingleNodeHistSumFloatBin16, Naive) {
   const size_t size = 1 << 5;
   thrust::device_vector<float> grad(size);
   thrust::device_vector<float> sum(size, 0.0);
@@ -22,12 +22,12 @@ TEST(SingleNodeHistSumFloat, Naive) {
     bin[i] = i;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, float>::HistSumSingleNode(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 6, size);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, float>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -38,7 +38,37 @@ TEST(SingleNodeHistSumFloat, Naive) {
   }
 }
 
-TEST(SingleNodeHistSumFloat, SingleSegment) {
+TEST(SingleNodeHistSumFloatBin8, Naive) {
+  const size_t size = 1 << 5;
+  thrust::device_vector<float> grad(size);
+  thrust::device_vector<float> sum(size, 0.0);
+  thrust::device_vector<unsigned> count(size, 0);
+  thrust::device_vector<unsigned char> bin(size);
+  thrust::device_vector<unsigned> node_size(2);
+  node_size[0] = 0;
+  node_size[1] = size;
+  for (unsigned i = 0; i < size; ++i) {
+    grad[i] = float(i);
+    bin[i] = i;
+  }
+
+  arboretum::core::HistTreeGrower<unsigned, unsigned char, float, float>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
+
+  TEST_OK(cudaDeviceSynchronize());
+  TEST_OK(cudaGetLastError());
+
+  for (unsigned i = 0; i < size; ++i) {
+    ASSERT_EQ(count[i], 1);
+    ASSERT_FLOAT_EQ(grad[i], sum[i]);
+  }
+}
+
+TEST(SingleNodeHistSumFloatBin16, SingleSegment) {
   const size_t size = 1 << 5;
   thrust::device_vector<float> grad(size);
   thrust::device_vector<float> sum(size, 0.0);
@@ -52,12 +82,12 @@ TEST(SingleNodeHistSumFloat, SingleSegment) {
     bin[i] = 0;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, float>::HistSumSingleNode(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 6, size);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, float>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -69,7 +99,38 @@ TEST(SingleNodeHistSumFloat, SingleSegment) {
   //   }
 }
 
-TEST(SingleNodeHistSumFloat, SingleSegmentFullSize) {
+TEST(SingleNodeHistSumFloatBin8, SingleSegment) {
+  const size_t size = 1 << 5;
+  thrust::device_vector<float> grad(size);
+  thrust::device_vector<float> sum(size, 0.0);
+  thrust::device_vector<unsigned> count(size, 0);
+  thrust::device_vector<unsigned char> bin(size);
+  thrust::device_vector<unsigned> node_size(2);
+  node_size[0] = 0;
+  node_size[1] = size;
+  for (unsigned i = 0; i < size; ++i) {
+    grad[i] = float(i);
+    bin[i] = 0;
+  }
+
+  arboretum::core::HistTreeGrower<unsigned, unsigned char, float, float>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
+
+  TEST_OK(cudaDeviceSynchronize());
+  TEST_OK(cudaGetLastError());
+
+  ASSERT_EQ(count[0], size);
+  // sum of 0 + 1 + .. + size-1
+  float true_sum = size * (size - 1) / 2;
+  ASSERT_FLOAT_EQ(sum[0], float(true_sum));
+  //   }
+}
+
+TEST(SingleNodeHistSumFloatBin16, SingleSegmentFullSize) {
   const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
@@ -84,12 +145,12 @@ TEST(SingleNodeHistSumFloat, SingleSegmentFullSize) {
     bin[i] = 0 % 1024;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, float>::HistSumSingleNode(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 11, size);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, float>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 11, size);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -101,7 +162,39 @@ TEST(SingleNodeHistSumFloat, SingleSegmentFullSize) {
   //   }
 }
 
-TEST(SingleNodeHistSumDouble, Naive) {
+TEST(SingleNodeHistSumFloatBin8, SingleSegmentFullSize) {
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
+
+  thrust::device_vector<float> grad(size);
+  thrust::device_vector<float> sum(size, 0.0);
+  thrust::device_vector<unsigned> count(size, 0);
+  thrust::device_vector<unsigned char> bin(size);
+  thrust::device_vector<unsigned> node_size(2);
+  node_size[0] = 0;
+  node_size[1] = size;
+  for (unsigned i = 0; i < size; ++i) {
+    grad[i] = float(i);
+    bin[i] = 0 % 1024;
+  }
+
+  arboretum::core::HistTreeGrower<unsigned, unsigned char, float, float>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 11, size);
+
+  TEST_OK(cudaDeviceSynchronize());
+  TEST_OK(cudaGetLastError());
+
+  ASSERT_EQ(count[0], size);
+  // sum of 0 + 1 + .. + size-1
+  float true_sum = size * (size - 1) / 2;
+  ASSERT_FLOAT_EQ(sum[0], float(true_sum));
+  //   }
+}
+
+TEST(SingleNodeHistSumDoubleBin16, Naive) {
   const size_t size = 1 << 5;
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(size, 0.0);
@@ -115,12 +208,12 @@ TEST(SingleNodeHistSumDouble, Naive) {
     bin[i] = i;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSumSingleNode(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 6, size);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -131,7 +224,37 @@ TEST(SingleNodeHistSumDouble, Naive) {
   }
 }
 
-TEST(SingleNodeHistSumDouble, SingleSegment) {
+TEST(SingleNodeHistSumDoubleBin8, Naive) {
+  const size_t size = 1 << 5;
+  thrust::device_vector<float> grad(size);
+  thrust::device_vector<double> sum(size, 0.0);
+  thrust::device_vector<unsigned> count(size, 0);
+  thrust::device_vector<unsigned char> bin(size);
+  thrust::device_vector<unsigned> node_size(2);
+  node_size[0] = 0;
+  node_size[1] = size;
+  for (unsigned i = 0; i < size; ++i) {
+    grad[i] = float(i);
+    bin[i] = i;
+  }
+
+  arboretum::core::HistTreeGrower<unsigned, unsigned char, float, double>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
+
+  TEST_OK(cudaDeviceSynchronize());
+  TEST_OK(cudaGetLastError());
+
+  for (unsigned i = 0; i < size; ++i) {
+    ASSERT_EQ(count[i], 1);
+    ASSERT_DOUBLE_EQ(grad[i], sum[i]);
+  }
+}
+
+TEST(SingleNodeHistSumDoubleBin16, SingleSegment) {
   const size_t size = 1 << 5;
   thrust::device_vector<float> grad(size);
   thrust::device_vector<double> sum(size, 0.0);
@@ -145,12 +268,12 @@ TEST(SingleNodeHistSumDouble, SingleSegment) {
     bin[i] = 0;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSumSingleNode(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 6, size);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -162,7 +285,38 @@ TEST(SingleNodeHistSumDouble, SingleSegment) {
   //   }
 }
 
-TEST(SingleNodeHistSumDouble, SingleSegmentFullSize) {
+TEST(SingleNodeHistSumDoubleBin8, SingleSegment) {
+  const size_t size = 1 << 5;
+  thrust::device_vector<float> grad(size);
+  thrust::device_vector<double> sum(size, 0.0);
+  thrust::device_vector<unsigned> count(size, 0);
+  thrust::device_vector<unsigned char> bin(size);
+  thrust::device_vector<unsigned> node_size(2);
+  node_size[0] = 0;
+  node_size[1] = size;
+  for (unsigned i = 0; i < size; ++i) {
+    grad[i] = float(i);
+    bin[i] = 0;
+  }
+
+  arboretum::core::HistTreeGrower<unsigned, unsigned char, float, double>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 6, size);
+
+  TEST_OK(cudaDeviceSynchronize());
+  TEST_OK(cudaGetLastError());
+
+  ASSERT_EQ(count[0], size);
+  // sum of 0 + 1 + .. + size-1
+  double true_sum = size * (size - 1) / 2;
+  ASSERT_DOUBLE_EQ(sum[0], true_sum);
+  //   }
+}
+
+TEST(SingleNodeHistSumDoubleBin16, SingleSegmentFullSize) {
   const size_t size = HIST_SUM_BLOCK_DIM * 10;
 
   thrust::device_vector<float> grad(size);
@@ -177,12 +331,44 @@ TEST(SingleNodeHistSumDouble, SingleSegmentFullSize) {
     bin[i] = 0 % 1024;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSumSingleNode(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 11, size);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 11, size);
+
+  TEST_OK(cudaDeviceSynchronize());
+  TEST_OK(cudaGetLastError());
+
+  ASSERT_EQ(count[0], size);
+  // sum of 0 + 1 + .. + size-1
+  double true_sum = size * (size - 1) / 2;
+  ASSERT_DOUBLE_EQ(sum[0], true_sum);
+  //   }
+}
+
+TEST(SingleNodeHistSumDoubleBin8, SingleSegmentFullSize) {
+  const size_t size = HIST_SUM_BLOCK_DIM * 10;
+
+  thrust::device_vector<float> grad(size);
+  thrust::device_vector<double> sum(size, 0.0);
+  thrust::device_vector<unsigned> count(size, 0);
+  thrust::device_vector<unsigned char> bin(size);
+  thrust::device_vector<unsigned> node_size(2);
+  node_size[0] = 0;
+  node_size[1] = size;
+  for (unsigned i = 0; i < size; ++i) {
+    grad[i] = float(i);
+    bin[i] = 0 % 1024;
+  }
+
+  arboretum::core::HistTreeGrower<unsigned, unsigned char, float, double>::
+    HistSumSingleNode(thrust::raw_pointer_cast(sum.data()),
+                      thrust::raw_pointer_cast(count.data()),
+                      thrust::raw_pointer_cast(grad.data()),
+                      thrust::raw_pointer_cast(node_size.data()),
+                      thrust::raw_pointer_cast(bin.data()), 8, size);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -211,12 +397,12 @@ TEST(MultiNodeHistSumDouble, _2_NodesNoTrick) {
     bin[i] = i % hist_size;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSum(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()), NULL, NULL,
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, false);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSum(thrust::raw_pointer_cast(sum.data()),
+            thrust::raw_pointer_cast(count.data()), NULL, NULL,
+            thrust::raw_pointer_cast(grad.data()),
+            thrust::raw_pointer_cast(node_size.data()),
+            thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, false);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -254,12 +440,12 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricNoTrick) {
     bin[i] = i % hist_size;
   }
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSum(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()), NULL, NULL,
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, false);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSum(thrust::raw_pointer_cast(sum.data()),
+            thrust::raw_pointer_cast(count.data()), NULL, NULL,
+            thrust::raw_pointer_cast(grad.data()),
+            thrust::raw_pointer_cast(node_size.data()),
+            thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, false);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -318,14 +504,14 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick) {
   parent_sum[2] = 204792.0 + 8.0;
   parent_sum[3] = 205110.0 + 10.0;
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSum(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(parent_sum.data()),
-    thrust::raw_pointer_cast(parent_count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, true);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSum(thrust::raw_pointer_cast(sum.data()),
+            thrust::raw_pointer_cast(count.data()),
+            thrust::raw_pointer_cast(parent_sum.data()),
+            thrust::raw_pointer_cast(parent_count.data()),
+            thrust::raw_pointer_cast(grad.data()),
+            thrust::raw_pointer_cast(node_size.data()),
+            thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, true);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -379,14 +565,14 @@ TEST(MultiNodeHistSumDouble, _2_NodesAsymmetricWithTrick2) {
   parent_sum[2] = 204792.0 + 8.0;
   parent_sum[3] = 205110.0 + 10.0;
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSum(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(parent_sum.data()),
-    thrust::raw_pointer_cast(parent_count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, true);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSum(thrust::raw_pointer_cast(sum.data()),
+            thrust::raw_pointer_cast(count.data()),
+            thrust::raw_pointer_cast(parent_sum.data()),
+            thrust::raw_pointer_cast(parent_count.data()),
+            thrust::raw_pointer_cast(grad.data()),
+            thrust::raw_pointer_cast(node_size.data()),
+            thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, true);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());
@@ -436,14 +622,14 @@ TEST(MultiNodeHistSumDouble, SingleSegmentWithTrick) {
   double true_sum = (size) * (size - 1) / 2;
   parent_sum[0] = true_sum;
 
-  arboretum::core::HistTreeGrower<unsigned, float, double>::HistSum(
-    thrust::raw_pointer_cast(sum.data()),
-    thrust::raw_pointer_cast(count.data()),
-    thrust::raw_pointer_cast(parent_sum.data()),
-    thrust::raw_pointer_cast(parent_count.data()),
-    thrust::raw_pointer_cast(grad.data()),
-    thrust::raw_pointer_cast(node_size.data()),
-    thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, true);
+  arboretum::core::HistTreeGrower<unsigned, unsigned short, float, double>::
+    HistSum(thrust::raw_pointer_cast(sum.data()),
+            thrust::raw_pointer_cast(count.data()),
+            thrust::raw_pointer_cast(parent_sum.data()),
+            thrust::raw_pointer_cast(parent_count.data()),
+            thrust::raw_pointer_cast(grad.data()),
+            thrust::raw_pointer_cast(node_size.data()),
+            thrust::raw_pointer_cast(bin.data()), 10, hist_size, 2, true);
 
   TEST_OK(cudaDeviceSynchronize());
   TEST_OK(cudaGetLastError());

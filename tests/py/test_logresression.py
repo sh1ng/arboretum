@@ -16,19 +16,19 @@ def run_regression(depth, true_values, true_model, trees=1):
     data = arboretum.DMatrix(iris.data, y=y)
 
     config = {'objective': 1,
-                         'method': 0,
-                         'tree':
-                         {
-                             'eta': 0.2,
-                             'max_depth': depth,
-                             'gamma': 0.0,
-                             'min_child_weight': 2.0,
-                             'min_leaf_size': 0,
-                             'colsample_bytree': 1.0,
-                             'colsample_bylevel': 1.0,
-                             'lambda': 0.0,
-                             'alpha': 0.0
-                         }}
+              'method': 0,
+              'tree':
+              {
+                  'eta': 0.2,
+                  'max_depth': depth,
+                  'gamma': 0.0,
+                  'min_child_weight': 2.0,
+                  'min_leaf_size': 0,
+                  'colsample_bytree': 1.0,
+                  'colsample_bylevel': 1.0,
+                  'lambda': 0.0,
+                  'alpha': 0.0
+              }}
 
     model = arboretum.train(config, data, trees)
 
@@ -43,7 +43,7 @@ def run_regression(depth, true_values, true_model, trees=1):
     utils.assert_model(true_model, model)
 
 
-def test_single_tree_depth_2(): run_regression(2, [0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128,
+def test_single_tree_depth_1(): run_regression(1, [0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128,
                                                    0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128,
                                                    0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128,
                                                    0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128, 0.5894128,
@@ -73,7 +73,7 @@ def test_single_tree_depth_2(): run_regression(2, [0.5894128, 0.5894128, 0.58941
 )
 
 
-def test_single_tree_depth_3(): run_regression(3, [0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
+def test_single_tree_depth_2(): run_regression(2, [0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
                                                    0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
                                                    0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
                                                    0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
@@ -103,7 +103,7 @@ def test_single_tree_depth_3(): run_regression(3, [0.59668386, 0.59668386, 0.596
 )
 
 
-def test_2trees_depth_2(): run_regression(2, [0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412,
+def test_2trees_depth_1(): run_regression(1, [0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412,
                                               0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412,
                                               0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412,
                                               0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412, 0.6638412,
@@ -132,4 +132,5 @@ def test_2trees_depth_2(): run_regression(2, [0.6638412, 0.6638412, 0.6638412, 0
 
 
 if __name__ == "__main__":
-    test_2trees_depth_2()
+    pass
+    # test_2trees_depth_2()
