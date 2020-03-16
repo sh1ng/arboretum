@@ -7,12 +7,13 @@ from setuptools import setup, find_packages
 sys.path.insert(0, '.')
 
 setup(name='arboretum',
-      version='0.1a9',
+      version='0.1a10',
       description='Gradient Boosting powered by GPU(NVIDIA CUDA)',
       long_description='Gradient Boosting implementation with focus on overcoming GRAM size limit',
       install_requires=[
           'numpy',
           'scipy',
+          'sklearn',
       ],
       maintainer='Vladimir Ovsyannikov',
       maintainer_email='vladimir.ovsyannikov@gmail.com',

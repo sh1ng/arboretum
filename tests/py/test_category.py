@@ -17,6 +17,7 @@ def rmse(y, y_hat):
     return np.sqrt(np.sum(diff))
 
 
+@pytest.mark.skip("TODO")
 @pytest.mark.parametrize("depth", [2, 3, 4, 5, 10])
 @pytest.mark.parametrize("trees", [1, 10, 20, 50])
 def test_category(depth, trees):
