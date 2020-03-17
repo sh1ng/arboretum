@@ -8,8 +8,7 @@ import utils
 
 @pytest.mark.parametrize("double_precision", [True, False])
 @pytest.mark.parametrize("method", ['hist', 'exact'])
-# TODO: fix hist_size > 255
-@pytest.mark.parametrize("hist_size", [255])
+@pytest.mark.parametrize("hist_size", [255, 256, 511, 512, 1023])
 def test_single_tree(double_precision, method, hist_size, y_pred=[[0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
                                                                    0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,
                                                                    0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386, 0.59668386,

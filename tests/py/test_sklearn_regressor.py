@@ -8,8 +8,7 @@ import utils
 
 @pytest.mark.parametrize("double_precision", [True, False])
 @pytest.mark.parametrize("method", ['hist', 'exact'])
-# TODO: fix hist_size > 255
-@pytest.mark.parametrize("hist_size", [12, 15, 16, 31, 32, 63, 64, 127, 128, 255])
+@pytest.mark.parametrize("hist_size", [12, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023])
 def test_single_tree(double_precision, method, hist_size, y_pred=[[21.833334, 21.833334, 33.25,     33.25,     33.25,     33.25,     21.833334,
                                                                    21.833334, 21.833334, 21.833334]]):
     boston = load_boston()
@@ -35,4 +34,7 @@ def test_single_tree(double_precision, method, hist_size, y_pred=[[21.833334, 21
                                           method=method,
                                           hist_size=hist_size)
     model.fit(data, y)
-    assert np.allclose(model.predict(data), y_pred)
+    pred = model.predict(data)
+    print(pred)
+    print(y_pred)
+    assert np.allclose(pred, y_pred)

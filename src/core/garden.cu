@@ -371,7 +371,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
   void ProcessDenseFeature(const size_t active_fid, const size_t circular_fid,
                            const size_t level, io::DataMatrix *data,
                            const bool partition_only) {
-        growers[circular_fid]->ProcessDenseFeature(
+    growers[circular_fid]->ProcessDenseFeature(
       partitioning_index, row2Node, grad,
       data->GetDeviceData<BIN_T>(active_fid),
       thrust::raw_pointer_cast(data->GetHostData<BIN_T>(active_fid).data()),
@@ -509,7 +509,7 @@ GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
       NODE_TYPE, unsigned int, GRAD_TYPE, SUM_TYPE,
       ContinuousTreeGrower<NODE_TYPE, unsigned int, GRAD_TYPE, SUM_TYPE>>(
       cfg.tree_param, data, cfg.internal, objective, cfg.verbose.booster);
-  else if (data->max_reduced_size <= sizeof(unsigned char) * CHAR_BIT)
+  else if (cfg.internal.hist_size < (1 << sizeof(unsigned char) * CHAR_BIT))
     return new ContinuousGardenBuilder<
       NODE_TYPE, unsigned char, GRAD_TYPE, SUM_TYPE,
       HistTreeGrower<NODE_TYPE, unsigned char, GRAD_TYPE, SUM_TYPE>>(
