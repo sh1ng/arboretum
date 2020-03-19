@@ -502,7 +502,7 @@ class ContinuousGardenBuilder : public GardenBuilderBase {
 };
 
 template <typename NODE_TYPE, typename GRAD_TYPE, typename SUM_TYPE>
-GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+GardenBuilderBase *chained(const Configuration &cfg, io::DataMatrix *data,
                            ApproximatedObjectiveBase *objective) {
   if (cfg.method == Exact)
     return new ContinuousGardenBuilder<
@@ -522,7 +522,7 @@ GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
 }
 
 template <typename GRAD_TYPE, typename SUM_TYPE>
-GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+GardenBuilderBase *chained(const Configuration &cfg, io::DataMatrix *data,
                            ApproximatedObjectiveBase *objective) {
   if (cfg.tree_param.depth < sizeof(unsigned char) * CHAR_BIT)
     return chained<unsigned char, GRAD_TYPE, SUM_TYPE>(cfg, data, objective);
@@ -535,23 +535,24 @@ GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
 }
 
 template <typename GRAD_TYPE>
-GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+GardenBuilderBase *chained(const Configuration &cfg, io::DataMatrix *data,
                            ApproximatedObjectiveBase *objective);
 
 template <>
-GardenBuilderBase *chained<float>(const Configuration cfg, io::DataMatrix *data,
+GardenBuilderBase *chained<float>(const Configuration &cfg,
+                                  io::DataMatrix *data,
                                   ApproximatedObjectiveBase *objective) {
   return chained<float, float>(cfg, data, objective);
 }
 
 template <>
-GardenBuilderBase *chained<float2>(const Configuration cfg,
+GardenBuilderBase *chained<float2>(const Configuration &cfg,
                                    io::DataMatrix *data,
                                    ApproximatedObjectiveBase *objective) {
   return chained<float2, float2>(cfg, data, objective);
 }
 
-GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
+GardenBuilderBase *chained(const Configuration &cfg, io::DataMatrix *data,
                            ApproximatedObjectiveBase *objective) {
   if (cfg.objective == LinearRegression)
     return chained<float>(cfg, data, objective);
@@ -559,7 +560,7 @@ GardenBuilderBase *chained(const Configuration cfg, io::DataMatrix *data,
     return chained<float2>(cfg, data, objective);
 }
 
-Garden::Garden(const Configuration &cfg)
+Garden::Garden(const Configuration cfg)
     : cfg(cfg), _init(false), _builder(nullptr), _objective(nullptr) {
   switch (cfg.objective) {
     case LinearRegression:

@@ -140,7 +140,7 @@ class GardenBuilderBase {
 
 class Garden {
  public:
-  Garden(const Configuration &cfg);
+  Garden(const Configuration cfg);
   ~Garden();
 
   const Configuration cfg;

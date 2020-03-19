@@ -18,7 +18,7 @@ class Histogram {
   void Update(const device_vector<SUM_T> &src_grad,
               const device_vector<unsigned> &src_count, const unsigned fid,
               const unsigned level, const cudaStream_t stream = 0);
-  bool CanUseTrick(const unsigned fid, const unsigned level);
+  bool CanUseTrick(const unsigned fid, const unsigned level) const;
   void Clear();
   const unsigned size;
   const unsigned hist_size;

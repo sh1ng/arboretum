@@ -184,8 +184,7 @@ inline void ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ApplySplit(
 }
 
 template <typename NODE_T, typename BIN_T, typename GRAD_T, typename SUM_T>
-inline void
-ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ProcessDenseFeature(
+void ContinuousTreeGrower<NODE_T, BIN_T, GRAD_T, SUM_T>::ProcessDenseFeature(
   const device_vector<unsigned> &partitioning_index,
   const device_vector<NODE_T> &row2Node, const device_vector<GRAD_T> &grad_d,
   device_vector<BIN_T> &fvalue_d, BIN_T *fvalue_h,

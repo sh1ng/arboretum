@@ -182,6 +182,7 @@ class BaseGrower {
         gridSizeGather(0),
         blockSizeGather(0),
         temp_bytes_allocated(0),
+        d_fvalue_partitioned(nullptr),
         best(best),
         features_histogram(features_histogram),
         config(config) {

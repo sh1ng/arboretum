@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+
 #include "common.h"
 #include "cuda_helpers.h"
 #include "histogram.h"
@@ -43,7 +44,8 @@ void Histogram<SUM_T>::Update(const device_vector<SUM_T> &src_grad,
 }
 
 template <typename SUM_T>
-bool Histogram<SUM_T>::CanUseTrick(const unsigned fid, const unsigned level) {
+bool Histogram<SUM_T>::CanUseTrick(const unsigned fid,
+                                   const unsigned level) const {
   return level != 0 && (this->at_level[fid] + 1 == level);
 }
 
