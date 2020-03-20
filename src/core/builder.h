@@ -5,6 +5,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
+
 #include "best_splits.h"
 #include "common.h"
 #include "cub/cub.cuh"
@@ -41,7 +42,8 @@ __forceinline__ __device__ unsigned long long int updateAtomicMax(
   loc.floats[0] = val1;
   loc.ints[1] = val2;
   loctest.ulong = *address;
-  while (loctest.floats[0] < val1)
+  while (loctest.floats[0] < val1 ||
+         (loctest.floats[0] == val1 && loctest.ints[1] < val2))
     loctest.ulong = atomicCAS(address, loctest.ulong, loc.ulong);
   return loctest.ulong;
 }

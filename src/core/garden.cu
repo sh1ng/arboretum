@@ -3,10 +3,12 @@
 #include <stdio.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+
 #include <algorithm>
 #include <ctime>
 #include <limits>
 #include <random>
+
 #include "best_splits.h"
 #include "continuous_tree_grower.h"
 #include "cub/cub.cuh"
@@ -542,14 +544,20 @@ template <>
 GardenBuilderBase *chained<float>(const Configuration &cfg,
                                   io::DataMatrix *data,
                                   ApproximatedObjectiveBase *objective) {
-  return chained<float, float>(cfg, data, objective);
+  if (cfg.internal.double_precision)
+    return chained<float, double>(cfg, data, objective);
+  else
+    return chained<float, float>(cfg, data, objective);
 }
 
 template <>
 GardenBuilderBase *chained<float2>(const Configuration &cfg,
                                    io::DataMatrix *data,
                                    ApproximatedObjectiveBase *objective) {
-  return chained<float2, float2>(cfg, data, objective);
+  if (cfg.internal.double_precision)
+    return chained<float2, mydouble2>(cfg, data, objective);
+  else
+    return chained<float2, float2>(cfg, data, objective);
 }
 
 GardenBuilderBase *chained(const Configuration &cfg, io::DataMatrix *data,
