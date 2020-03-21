@@ -24,7 +24,7 @@ struct TreeParam {
             float colsample_bylevel = 1.0, float gamma_absolute = 0.0,
             float gamma_relative = 0.0, float lambda = 1.0, float alpha = 0.0,
             float initial_y = 0.5, float eta = 0.3, float max_leaf_weight = 0.0,
-            float scale_pos_weight = 0.5, unsigned short labels_count = 1);
+            float scale_pos_weight = 1.0, unsigned short labels_count = 1);
   Method method;
   Objective objective;
   unsigned int depth;

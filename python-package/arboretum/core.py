@@ -349,7 +349,7 @@ class ArboretumRegression(object):
                  gamma_absolute=0.0, gamma_relative=0.0,
                  min_child_weight=1.0, min_leaf_size=0,  max_leaf_weight=0.0, colsample_bytree=0.8,
                  colsample_bylevel=1.0, l1=1.0, l2=1.0,
-                 scale_pos_weight=1, initial_y=0.5, seed=0,
+                 scale_pos_weight=1.0, initial_y=0.5, seed=0,
                  double_precision=False, method='hist', hist_size=255, **kwargs):
         """[summary]
 
@@ -382,8 +382,8 @@ class ArboretumRegression(object):
             L1 or alpha regularization, by default 1.0
         l2 : float, optional
             L2 or lambda regularization, by default 1.0
-        scale_pos_weight : int, optional
-            Scaling ratio for positive , by default 1
+        scale_pos_weight : float, optional
+            Scaling ratio for positive , by default 1.0
         initial_y : float, optional
             Initial value to start from, by default 0.5
         seed : int, optional
@@ -544,7 +544,7 @@ class ArboretumClassifier(object):
                  gamma_absolute=0.0, gamma_relative=0.0,
                  min_child_weight=1.0, min_leaf_size=0,  max_leaf_weight=0.0, colsample_bytree=0.8,
                  colsample_bylevel=1.0, l1=1.0, l2=1.0,
-                 scale_pos_weight=1, initial_y=0.5, seed=0,
+                 scale_pos_weight=1.0, initial_y=0.5, seed=0,
                  double_precision=False, method='hist', hist_size=255, **kwargs):
         """[summary]
 
@@ -577,8 +577,8 @@ class ArboretumClassifier(object):
             L1 or alpha regularization, by default 1.0
         l2 : float, optional
             L2 or lambda regularization, by default 1.0
-        scale_pos_weight : int, optional
-            Scaling ratio for positive , by default 1
+        scale_pos_weight : float, optional
+            Scaling ratio for positive , by default 1.0
         initial_y : float, optional
             Initial value to start from, by default 0.5
         seed : int, optional
