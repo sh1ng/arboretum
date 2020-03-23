@@ -483,7 +483,7 @@ class ArboretumRegression(object):
                     "Only DMatrix and numpy array are supported")
 
         self.best_round = -1
-        self.best_score = 0
+        self.best_score = np.inf
 
         for i in range(self.n_estimators):
             self._garden.grow_tree()
@@ -492,15 +492,17 @@ class ArboretumRegression(object):
                 self._garden.append_last_tree(eval_data)
                 pred = self._garden.get_y(eval_data)
                 score = eval_metric(eval_labels, pred)
-                if early_stopping_rounds + self.best_round < i:
-                    print("early stopping at {0} score {1}, use 'best_round' and 'best_score' to get it".format(
-                        self.best_round, self.best_score))
-                    break
-                elif score > self.best_score:
+
+                if score < self.best_score:
                     print(
                         "improved score {0} {1}->{2}".format(i, self.best_score, score))
                     self.best_score = score
                     self.best_round = i
+
+                if early_stopping_rounds + self.best_round < i:
+                    print("early stopping at {0} score {1}, use 'best_round' and 'best_score' to get it".format(
+                        self.best_round, self.best_score))
+                    break
 
         return self
 
@@ -627,7 +629,7 @@ class ArboretumClassifier(object):
         self._garden = Garden(self._config)
         self.verbosity = verbosity
 
-    def fit(self, X, y=None, eval_set=None, eval_labels=None, early_stopping_rounds=5, eval_metric=roc_auc_score):
+    def fit(self, X, y=None, eval_set=None, eval_labels=None, early_stopping_rounds=5, eval_metric=lambda a, b: -roc_auc_score(a, b)):
         """Fit gradient boosting model.
 
         Parameters
@@ -677,7 +679,7 @@ class ArboretumClassifier(object):
                     "Only DMatrix and numpy array are supported")
 
         self.best_round = -1
-        self.best_score = 0
+        self.best_score = np.inf
 
         for i in range(self.n_estimators):
             self._garden.grow_tree()
@@ -686,15 +688,17 @@ class ArboretumClassifier(object):
                 self._garden.append_last_tree(eval_data)
                 pred = self._garden.get_y(eval_data)
                 score = eval_metric(eval_labels, pred)
-                if early_stopping_rounds + self.best_round < i:
-                    print("early stopping at {0} score {1}, use 'best_round' and 'best_score' to get it".format(
-                        self.best_round, self.best_score))
-                    break
-                elif score > self.best_score:
+
+                if score < self.best_score:
                     print(
                         "improved score {0} {1}->{2}".format(i, self.best_score, score))
                     self.best_score = score
                     self.best_round = i
+
+                if early_stopping_rounds + self.best_round < i:
+                    print("early stopping at {0} score {1}, use 'best_round' and 'best_score' to get it".format(
+                        self.best_round, self.best_score))
+                    break
 
         return self
 
