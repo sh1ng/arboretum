@@ -4,6 +4,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
+
 #include <functional>
 #include <vector>
 
@@ -58,7 +59,7 @@ class DataMatrix {
   template <typename T>
   void InitHistInternal(int hist_size, bool verbose);
 
-template <typename T>
+  template <typename T>
   void TransferToGPUInternal(const size_t free, bool verbose);
 
   std::vector<thrust::host_vector<

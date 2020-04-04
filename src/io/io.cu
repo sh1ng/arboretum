@@ -2,10 +2,12 @@
 #include <thrust/sort.h>
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
 #include <thrust/unique.h>
+
 #include <algorithm>
 #include <functional>
 #include <unordered_set>
 #include <vector>
+
 #include "core/cuda_helpers.h"
 #include "cub/cub.cuh"
 #include "io.h"
@@ -16,18 +18,287 @@ using namespace std;
 
 #define ITEMS 8
 
+struct ValueIndexSegment {
+  bool border;
+  float value;
+  unsigned count;
+};
+
+class ValueSegmentIterator {
+ public:
+  // Required iterator traits
+  typedef ValueSegmentIterator self_type;  ///< My own type
+  typedef ptrdiff_t difference_type;       ///< Type to express the result of
+                                      ///< subtracting one iterator from another
+  typedef ValueIndexSegment
+    value_type;  ///< The type of the element the iterator can point to
+  typedef value_type *
+    pointer;  ///< The type of a pointer to an element the iterator can point to
+  typedef value_type reference;  ///< The type of a reference to an element the
+                                 ///< iterator can point to
+
+  typedef typename thrust::detail::iterator_facade_category<
+    thrust::any_system_tag, thrust::random_access_traversal_tag, value_type,
+    reference>::type iterator_category;  ///< The iterator category
+
+ private:
+  const unsigned segment_size;
+  const float *itr;
+  difference_type offset;
+
+ public:
+  /// Constructor
+  __host__ __device__ __forceinline__ ValueSegmentIterator(
+    const unsigned segment_size,
+    const float *itr,            ///< Input iterator to wrap
+    difference_type offset = 0)  ///< OffsetT (in items) from \p itr denoting
+                                 ///< the position of the iterator
+      : segment_size(segment_size), itr(itr), offset(offset) {}
+
+  /// Postfix increment
+  __host__ __device__ __forceinline__ self_type operator++(int) {
+    self_type retval = *this;
+    offset++;
+    return retval;
+  }
+
+  /// Prefix increment
+  __host__ __device__ __forceinline__ self_type operator++() {
+    offset++;
+    return *this;
+  }
+
+  /// Indirection
+  __host__ __device__ __forceinline__ reference operator*() const {
+    difference_type prev_offset = offset > 0 ? offset - 1 : 0;
+    value_type retval;
+    retval.value = (itr[offset] + itr[prev_offset]) * 0.5;
+    retval.border = (itr[offset] != itr[prev_offset]);
+    retval.count = retval.border;
+    return retval;
+  }
+
+  /// Addition
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type operator+(Distance n) const {
+    self_type retval(segment_size, itr, offset + n);
+    return retval;
+  }
+
+  /// Addition assignment
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type &operator+=(Distance n) {
+    offset += n;
+    return *this;
+  }
+
+  /// Subtraction
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type operator-(Distance n) const {
+    self_type retval(itr, offset - n);
+    return retval;
+  }
+
+  /// Subtraction assignment
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type &operator-=(Distance n) {
+    offset -= n;
+    return *this;
+  }
+
+  /// Distance
+  __host__ __device__ __forceinline__ difference_type
+  operator-(self_type other) const {
+    return offset - other.offset;
+  }
+
+  /// Array subscript
+  template <typename Distance>
+  __host__ __device__ __forceinline__ reference operator[](Distance n) const {
+    self_type offset = (*this) + n;
+    return *offset;
+  }
+
+  /// Equal to
+  __host__ __device__ __forceinline__ bool operator==(const self_type &rhs) {
+    return ((itr == rhs.itr) && (offset == rhs.offset));
+  }
+
+  /// Not equal to
+  __host__ __device__ __forceinline__ bool operator!=(const self_type &rhs) {
+    return ((itr != rhs.itr) || (offset != rhs.offset));
+  }
+
+  /// Normalize
+  __host__ __device__ __forceinline__ void normalize() {
+    itr += offset;
+    offset = 0;
+  }
+
+  /// ostream operator
+  friend std::ostream &operator<<(std::ostream &os, const self_type & /*itr*/) {
+    return os;
+  }
+};
+
+struct SegmentLength {
+  __device__ __forceinline__ ValueIndexSegment
+  operator()(const ValueIndexSegment &a, const ValueIndexSegment &b) const {
+    ValueIndexSegment ret;
+    ret.value = b.value;
+    ret.count = a.count + b.count;
+    ret.border = b.border;
+    return ret;
+  }
+};
+
+class ThresholdOutputIterator {
+ public:
+  // Required iterator traits
+  typedef ThresholdOutputIterator self_type;  ///< My own type
+  typedef ptrdiff_t difference_type;          ///< Type to express the result of
+                                      ///< subtracting one iterator from another
+  typedef void
+    value_type;  ///< The type of the element the iterator can point to
+  typedef void
+    pointer;  ///< The type of a pointer to an element the iterator can point to
+  typedef void reference;  ///< The type of a reference to an element the
+                           ///< iterator can point to
+
+  typedef typename thrust::detail::iterator_facade_category<
+    thrust::any_system_tag, thrust::random_access_traversal_tag, value_type,
+    reference>::type iterator_category;  ///< The iterator category
+
+ private:
+  float *thresholds;
+  unsigned size;
+  difference_type offset;
+
+ public:
+  /// Constructor
+  __host__ __device__ __forceinline__
+  ThresholdOutputIterator(float *thresholds, unsigned size,
+                          difference_type offset = 0)  ///< Base offset
+      : thresholds(thresholds), size(size), offset(offset) {}
+
+  /// Postfix increment
+  __host__ __device__ __forceinline__ self_type operator++(int) {
+    self_type retval = *this;
+    offset++;
+    return retval;
+  }
+
+  /// Prefix increment
+  __host__ __device__ __forceinline__ self_type operator++() {
+    offset++;
+    return *this;
+  }
+
+  /// Indirection
+  __host__ __device__ __forceinline__ self_type &operator*() {
+    // return self reference, which can be assigned to anything
+    return *this;
+  }
+
+  /// Addition
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type operator+(Distance n) const {
+    self_type retval(thresholds, size, offset + n);
+    return retval;
+  }
+
+  /// Addition assignment
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type &operator+=(Distance n) {
+    offset += n;
+    return *this;
+  }
+
+  /// Subtraction
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type operator-(Distance n) const {
+    self_type retval(thresholds, size, offset - n);
+    return retval;
+  }
+
+  /// Subtraction assignment
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type &operator-=(Distance n) {
+    offset -= n;
+    return *this;
+  }
+
+  /// Distance
+  __host__ __device__ __forceinline__ difference_type
+  operator-(self_type other) const {
+    return offset - other.offset;
+  }
+
+  /// Array subscript
+  template <typename Distance>
+  __host__ __device__ __forceinline__ self_type &operator[](Distance n) {
+    // return self reference, which can be assigned to anything
+    self_type retval(thresholds, size, offset + n);
+    return *retval;
+  }
+
+  /// Structure dereference
+  __host__ __device__ __forceinline__ pointer operator->() { return; }
+
+  /// Assignment to self (no-op)
+  __host__ __device__ __forceinline__ void operator=(self_type const &other) {
+    offset = other.offset;
+    size = other.size;
+  }
+
+  /// Assignment to anything else (no-op)
+  __device__ __forceinline__ void operator=(ValueIndexSegment const &value) {
+    if (value.border) {
+      int segment = int(min(value.count + 1, unsigned(offset / size + 1))) - 2;
+      if (segment >= 0) {
+        union fi {
+          float f;
+          int i;
+        };
+
+        fi loc, test;
+        loc.f = value.value;
+        test.f = thresholds[segment];
+        while (loc.f < test.f)
+          test.i = atomicCAS(((int *)thresholds) + segment, test.i, loc.i);
+      }
+    }
+  }
+
+  /// Cast to void* operator
+  __host__ __device__ __forceinline__ operator void *() const { return NULL; }
+
+  /// Equal to
+  __host__ __device__ __forceinline__ bool operator==(const self_type &rhs) {
+    return (offset == rhs.offset);
+  }
+
+  /// Not equal to
+  __host__ __device__ __forceinline__ bool operator!=(const self_type &rhs) {
+    return (offset != rhs.offset);
+  }
+
+  /// ostream operator
+  friend std::ostream &operator<<(std::ostream &os, const self_type &itr) {
+    os << "[" << itr.offset << "]";
+    return os;
+  }
+};
+
 template <typename T, int ITEMS_PER_THREAD>
-__global__ void build_histogram(T *bin, float *threshold,
-                                const float *fvalue_unique, const float *fvalue,
-                                const int hist_size, const int unique_size,
-                                const size_t n) {
+__global__ void build_histogram(T *bin, const float *threshold,
+                                const float *fvalue, const int hist_size,
+                                const int unique_size, const size_t n) {
   extern __shared__ float values[];
   const int size = min(unique_size, hist_size);
   if (threadIdx.x < hist_size) {
     values[threadIdx.x] = INFINITY;
-    unsigned idx = (threadIdx.x + 1) * unique_size / size;
-    if (threadIdx.x < size - 1)
-      values[threadIdx.x] = (fvalue_unique[idx] + fvalue_unique[idx - 1]) * 0.5;
+    if (threadIdx.x < size - 1) values[threadIdx.x] = threshold[threadIdx.x];
   }
 
   __syncthreads();
@@ -38,9 +309,6 @@ __global__ void build_histogram(T *bin, float *threshold,
       blockDim.x * blockIdx.x * ITEMS_PER_THREAD + i * blockDim.x + threadIdx.x;
     if (idx < n) bin[idx] = lower_bound<float>(values, fvalue[idx], size);
   }
-
-  if (blockIdx.x == 0 && threadIdx.x < size)
-    threshold[threadIdx.x] = values[threadIdx.x];
 }
 
 DataMatrix::DataMatrix(int rows, int columns, int columns_category)
@@ -95,7 +363,18 @@ void DataMatrix::InitHistInternal(int hist_size, bool verbose) {
       thrust::raw_pointer_cast(d_data.data()),
       thrust::raw_pointer_cast(d_data_sorted.data()), rows);
 
+    size_t temp_storage_bytes_scan = 0;
+
+    OK(cub::DeviceScan::InclusiveScan(
+      NULL, temp_storage_bytes_scan, ValueSegmentIterator(0, nullptr, 0),
+      ThresholdOutputIterator(nullptr, 0), SegmentLength(), rows));
+
+    temp_storage_bytes = max(temp_storage_bytes_scan, temp_storage_bytes);
+
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+    unsigned segment_size = rows / hist_size;
+    segment_size = max(1, segment_size);
 
     for (size_t i = 0; i < columns_dense; ++i) {
       thrust::copy(data[i].begin(), data[i].end(), d_data.begin());
@@ -105,23 +384,38 @@ void DataMatrix::InitHistInternal(int hist_size, bool verbose) {
         thrust::raw_pointer_cast(d_data.data()),
         thrust::raw_pointer_cast(d_data_sorted.data()), rows);
 
-      auto n = thrust::unique(d_data_sorted.begin(), d_data_sorted.end());
-      int unique_size = n - d_data_sorted.begin();
+      thrust::fill(d_threshold.begin(), d_threshold.end(), INFINITY);
+
+      ValueSegmentIterator in(segment_size,
+                              thrust::raw_pointer_cast(d_data_sorted.data()));
+      ThresholdOutputIterator out(thrust::raw_pointer_cast(d_threshold.data()),
+                                  segment_size);
+      SegmentLength op;
+
+      OK(cub::DeviceScan::InclusiveScan(d_temp_storage, temp_storage_bytes, in,
+                                        out, op, rows));
+
+      data_reduced_mapping[i].resize(hist_size);
+
+      thrust::copy(d_threshold.begin(), d_threshold.end(),
+                   data_reduced_mapping[i].begin());
+
+      int unique_size = 0;
+      for (unique_size = 0; unique_size < data_reduced_mapping[i].size() &&
+                            !std::isinf(data_reduced_mapping[i][unique_size]);
+           unique_size++) {
+      }
+      unique_size++;
 
       int size = std::min(unique_size, hist_size);
       reduced_size[i] = 32 - __builtin_clz(size);
-      data_reduced_mapping[i].resize(size);
       int grid_size = (rows + 1024 * ITEMS - 1) / (1024 * ITEMS);
       build_histogram<T, ITEMS><<<grid_size, 1024, hist_size * sizeof(float)>>>(
         thrust::raw_pointer_cast(bin.data()),
         thrust::raw_pointer_cast(d_threshold.data()),
-        thrust::raw_pointer_cast(d_data_sorted.data()),
         thrust::raw_pointer_cast(d_data.data()), hist_size, unique_size, rows);
 
       OK(cudaDeviceSynchronize());
-
-      thrust::copy(d_threshold.begin(), d_threshold.begin() + size,
-                   data_reduced_mapping[i].begin());
 
       GetHostData<T>(i).resize(rows);
       thrust::copy(bin.begin(), bin.end(), GetHostData<T>(i).begin());
