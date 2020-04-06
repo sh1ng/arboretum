@@ -5,6 +5,8 @@
 pip install arboretum
 ```
 
+[Benchmark results](https://docs.google.com/spreadsheets/d/1XAqtHsch0u6-oiknHGbSjTgkIC43NVxaZjHKDcVmRW8/edit?usp=sharing)
+
 ## Dependencies
 * Python 2.7 or Python 3
 * Cuda toolkit 7+
